@@ -3,10 +3,14 @@
   "version": "1.0.0",
   "main": "index.js",
   "dependencies": {
-    "expo": "~57.0.28",
+    "@react-native-community/slider": "4.5.2",
+    "expo": "51.0.0",
+    "expo-av": "~14.0.7",
+    "expo-media-library": "~16.0.5",
     "expo-status-bar": "~57.0.1",
-    "react": "19.2.3",
-    "react-native": "0.86.3"
+    "react": "18.2.0",
+    "react-native": "0.74.5",
+    "react-native-google-mobile-ads": "^17.2.0"
   },
   "scripts": {
     "start": "expo start",
