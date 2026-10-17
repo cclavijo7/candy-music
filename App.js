@@ -1,10 +1,21 @@
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
+import { useState } from "react";
 import { StatusBar } from "expo-status-bar";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import Slider from "@react-native-community/slider";
+
+function formatTime(seconds) {
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = Math.floor(seconds % 60);
+
+  return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
+}
 
 export default function App() {
   const player = useAudioPlayer(require("./assets/audio/01 Mestizo.mp3"));
   const status = useAudioPlayerStatus(player);
+  const [sliderPosition, setSliderPosition] = useState(null);
+ 
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
@@ -16,6 +27,27 @@ export default function App() {
         <Text style={styles.note}>♫</Text>
         <Text style={styles.songTitle}>01 Mestizo</Text>
         <Text style={styles.message}>Tu música, siempre contigo.</Text>
+
+        <Text style={styles.time}>
+          {formatTime(status.currentTime)} / {formatTime(status.duration)}
+        </Text>
+
+        <Slider
+          style={styles.slider}
+          minimumValue={0}
+          maximumValue={status.duration || 1}
+          value={sliderPosition ?? status.currentTime}
+          minimumTrackTintColor="#A78BFA"
+          maximumTrackTintColor="#393653"
+          thumbTintColor="#A78BFA"
+          onValueChange={(value) => {
+            setSliderPosition(value);
+          }}
+          onSlidingComplete={(value) => {
+            player.seekTo(value);
+            setSliderPosition(null);
+          }}
+        />  
 
         <Pressable 
           style={styles.button}
@@ -84,6 +116,17 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 12,
     lineHeight: 21,
+  },
+  time: {
+    color: '#A78BFA',
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 16,
+  },
+  slider: {
+    width: '100%',
+    height: 40,
+    marginTop: 4,
   },
   button: {
     backgroundColor: '#7C3AED',
