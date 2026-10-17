@@ -2,9 +2,9 @@ import { createAudioPlayer } from "expo-audio";
 
 let audioPlayer = null;
 
-export function getAudioPlayer() {
+export function getAudioPlayer(audioSource) {
   if (audioPlayer === null) {
-    audioPlayer = createAudioPlayer(null);
+    audioPlayer = createAudioPlayer(audioSource);
   }
 
   return audioPlayer;

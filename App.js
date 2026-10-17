@@ -1,7 +1,10 @@
+import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import { StatusBar } from "expo-status-bar";
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
 export default function App() {
+  const player = useAudioPlayer(require("./assets/audio/01 Mestizo.mp3"));
+  const status = useAudioPlayerStatus(player);
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
@@ -11,8 +14,23 @@ export default function App() {
 
       <View style={styles.player}>
         <Text style={styles.note}>♫</Text>
-        <Text style={styles.songTitle}>Tu música te espera</Text>
-        <Text style={styles.message}>Pronto podrás escuchar tus canciones favoritas aquí.</Text>
+        <Text style={styles.songTitle}>01 Mestizo</Text>
+        <Text style={styles.message}>Tu música, siempre contigo.</Text>
+
+        <Pressable 
+          style={styles.button}
+          onPress={() => { 
+            if (status.playing) {
+              player.pause();
+            } else {
+              player.play();
+            }
+          }}
+        >
+          <Text style={styles.buttonText}>
+            {status.playing ? "⏸ Pausar" : "▶ Reproducir"}
+          </Text>
+        </Pressable>
       </View>
 
       <Text style={styles.footer}> TU MÚSICA. TU MOMENTO</Text>
@@ -66,6 +84,19 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 12,
     lineHeight: 21,
+  },
+  button: {
+    backgroundColor: '#7C3AED',
+    paddingVertical: 12,
+    paddingHorizontal: 28,
+    borderRadius: 24,
+    marginTop: 24,
+  },
+  buttonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+    textAlign: 'center',
   },
   footer: {
     color: '#85859D',
