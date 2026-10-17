@@ -4,7 +4,7 @@
   "main": "index.js",
   "dependencies": {
     "@react-native-community/slider": "5.2.0",
-    "expo": "~57.0.29",
+    "expo": "~57.0.30",
     "expo-asset": "~57.0.20",
     "expo-audio": "~57.0.5",
     "expo-media-library": "~57.0.5",
