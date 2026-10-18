@@ -1,5 +1,6 @@
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import { useState } from "react";
+import { getDocumentAsync } from "expo-document-picker";
 import { StatusBar } from "expo-status-bar";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import Slider from "@react-native-community/slider";
@@ -15,7 +16,23 @@ export default function App() {
   const player = useAudioPlayer(require("./assets/audio/01 Mestizo.mp3"));
   const status = useAudioPlayerStatus(player);
   const [sliderPosition, setSliderPosition] = useState(null);
-  
+  const [songTitle, setSongTitle] = useState(null);
+  const pickSong = async () => {
+    const result = await getDocumentAsync({
+      type: 'audio/*',
+      copyToCacheDirectory: true,
+      multiple: false,
+    });
+
+    if (!result.canceled && result.assets.length > 0) {
+      const song = result.assets[0];
+
+      player.replace({ uri: song.uri });
+      setSongTitle(song.name);
+      setSliderPosition(null);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
@@ -25,7 +42,7 @@ export default function App() {
 
       <View style={styles.player}>
         <Text style={styles.note}>♫</Text>
-        <Text style={styles.songTitle}>01 Mestizo</Text>
+        <Text style={styles.songTitle}>{songTitle}</Text>
         <Text style={styles.message}>Tu música, siempre contigo.</Text>
 
         <Text style={styles.time}>
@@ -63,6 +80,15 @@ export default function App() {
             {status.playing ? "⏸ Pausar" : "▶ Reproducir"}
           </Text>
         </Pressable>
+
+        <Pressable
+          style={styles.button}
+          onPress={pickSong}
+          >
+            <Text style={styles.buttonText}>
+              🎵 Elegir canción
+            </Text>
+          </Pressable>
       </View>
 
       <Text style={styles.footer}> TU MÚSICA. TU MOMENTO</Text>
