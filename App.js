@@ -15,7 +15,7 @@ export default function App() {
   const player = useAudioPlayer(require("./assets/audio/01 Mestizo.mp3"));
   const status = useAudioPlayerStatus(player);
   const [sliderPosition, setSliderPosition] = useState(null);
- 
+  
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
@@ -43,8 +43,8 @@ export default function App() {
           onValueChange={(value) => {
             setSliderPosition(value);
           }}
-          onSlidingComplete={(value) => {
-            player.seekTo(value);
+          onSlidingComplete={async(value) => {
+            await player.seekTo(value);
             setSliderPosition(null);
           }}
         />  
