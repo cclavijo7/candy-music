@@ -10,15 +10,15 @@ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
 const musicDirectory = new Directory(Paths.document, 'candy-music-library');
 const libraryFile = new File(musicDirectory, 'library.json');
-const saveLibrary = async (songsToSave) => {
+const saveLibrary = (songsToSave) => {
   try {
-    if (!libraryFile.exists) {
+    if (!libraryFile.exists) { 
       libraryFile.create({ intermediates: true });
     }
     libraryFile.write(JSON.stringify(songsToSave, null, 2));
     console.log('Biblioteca guardada:', songsToSave.length, 'canciones');
   } catch (error) {
-    console.log('Error al guardar la bliblioteca:', error);
+    console.log('Error al guardar la biblioteca:', error);
   }
 };
 
@@ -35,9 +35,10 @@ export default function App() {
 
   const [sliderPosition, setSliderPosition] = useState(null);
   const [songTitle, setSongTitle] = useState(null);
+  const [currentSongId, setCurrentSongId] = useState(null);
   const [songs, setSongs] = useState([]);
   const [importMenuVisible, setImportMenuVisible] = useState(false);
-
+ 
   useEffect(() => {
     const loadSavedLibrary = async () => {
       try {
@@ -127,7 +128,7 @@ export default function App() {
     setSongs(updatedSongs);
     await saveLibrary(updatedSongs);
 
-    console.log('Biblioteca actualziada:', updatedSongs.length, 'canciones');
+    console.log('Biblioteca actualizada:', updatedSongs.length, 'canciones');
    } catch (error) {
     console.log('Error al buscar canciones:', error);
    }
@@ -184,6 +185,7 @@ export default function App() {
     if (firstSong) {
         player.replace({ uri: firstSong.uri });
         setSongTitle(firstSong.name);
+        setCurrentSongId(firstSong.id);
         setSliderPosition(null);
         player.play();
       }
@@ -195,8 +197,43 @@ export default function App() {
   const playSong = (song) => {
     player.replace({ uri: song.uri });
     setSongTitle(song.name);
+    setCurrentSongId(song.id);
     setSliderPosition(null);
     player.play();
+  };
+
+  const playNextSong = () => {
+    if (songs.length === 0) {
+      return;
+    }
+
+    const currentIndex = songs.findIndex(
+      (song) => song.id === currentSongId
+    );
+
+    const nextIndex = 
+      currentIndex === -1 || currentIndex === songs.length - 1
+      ? 0
+      : currentIndex + 1;
+
+    playSong(songs[nextIndex]);  
+  };
+
+  const playPreviousSong = () => {
+    if (songs.length === 0) {
+      return;
+    }
+
+    const currentIndex = songs.findIndex(
+      (song) => song.id === currentSongId
+    );
+
+    const previousIndex =
+      currentIndex <= 0
+      ? songs.length - 1
+      : currentIndex - 1;
+    
+    playSong(songs[previousIndex]);  
   };
 
   const openImportMenu = () => {
@@ -258,6 +295,24 @@ export default function App() {
           <Text style={styles.buttonText}>
             {status.playing ? "⏸ Pausar" : "▶ Reproducir"}
           </Text>
+        </Pressable>
+
+        <Pressable
+          style={styles.button}
+          onPress={playPreviousSong}
+          >
+            <Text style={styles.buttonText}>
+              ⏮ Anterior
+            </Text>
+        </Pressable>
+
+        <Pressable
+          style={styles.button}
+          onPress={playNextSong}
+          >
+            <Text style={styles.buttonText}>
+              Siguiente ⏭
+            </Text>
         </Pressable>
 
         <Pressable style={styles.button} onPress={openImportMenu}>
