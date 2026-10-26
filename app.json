@@ -7,7 +7,7 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true  
+      "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
@@ -31,7 +31,8 @@
           "resizeMode": "contain",
           "backgroundColor": "#000000"
         }
-      ]
+      ],
+      "expo-status-bar"
     ]
   }
 }

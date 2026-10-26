@@ -15,10 +15,14 @@ const saveLibrary = (songsToSave) => {
     if (!libraryFile.exists) { 
       libraryFile.create({ intermediates: true });
     }
+
     libraryFile.write(JSON.stringify(songsToSave, null, 2));
+
     console.log('Biblioteca guardada:', songsToSave.length, 'canciones');
+    return true;
   } catch (error) {
     console.log('Error al guardar la biblioteca:', error);
+    return false;
   }
 };
 
@@ -32,13 +36,37 @@ function formatTime(seconds) {
 export default function App() {
   const player = useAudioPlayer(require("./assets/audio/01 Mestizo.mp3"));
   const status = useAudioPlayerStatus(player);
+  console.log('Estado del reproductor:', status.isLoaded);
+  console.log('Error de reproduccion:', status.error);
 
   const [sliderPosition, setSliderPosition] = useState(null);
   const [songTitle, setSongTitle] = useState(null);
   const [currentSongId, setCurrentSongId] = useState(null);
   const [songs, setSongs] = useState([]);
   const [importMenuVisible, setImportMenuVisible] = useState(false);
- 
+
+  const clearLibrary = () => {
+  try {
+    const saved = saveLibrary([]);
+  
+    if (!saved) {
+      console.log('No se pudo vaciar la biblioteca guardada.');
+      return;
+    }
+
+    player.pause();
+    setSongs([]);
+    setSongTitle(null);
+    setCurrentSongId(null);
+    setSliderPosition(null);
+
+    console.log('Biblioteca vaciada correctamente.');
+    console.log('Archivos de audio conservados.');
+  } catch (error) {
+    console.log('Error al vaciar la biblioteca:', error);
+  }
+};
+
   useEffect(() => {
     const loadSavedLibrary = async () => {
       try {
@@ -141,6 +169,9 @@ export default function App() {
         copyToCacheDirectory: true,
         multiple: true,
       });
+      console.log('Resultado del selector:', result.canceled
+        ? 'Importación cancelada'
+        : `${result.assets.length} archivo(s) seleccionado(s)`);
 
     if (result.canceled || result.assets.length === 0) {
       return;
@@ -164,6 +195,7 @@ export default function App() {
       const destinationFile = new File(musicDirectory, fileName);
 
       await sourceFile.copy(destinationFile);
+      console.log('Archivo copiado:', destinationFile.uri);
 
       const importedSongs = {
         id: destinationFile.uri,
@@ -178,7 +210,12 @@ export default function App() {
     const updatedSongs = [...songs, ...newSongs];
 
     setSongs(updatedSongs);
-    await saveLibrary(updatedSongs);
+    
+    const saved = saveLibrary(updatedSongs);
+
+    console.log('Canciones nuevas importadas:', newSongs.length);
+    console.log('Total de canciones en biblioteca:', updatedSongs.length);
+    console.log('Guardado correcto:', saved);
 
     const firstSong = newSongs[0];
 
@@ -195,6 +232,7 @@ export default function App() {
   };
 
   const playSong = (song) => {
+    console.log('Cancion seleccionada:', song.name, song.uri);
     player.replace({ uri: song.uri });
     setSongTitle(song.name);
     setCurrentSongId(song.id);
@@ -354,6 +392,15 @@ export default function App() {
 
       <View style={styles.library}>
         <Text style={styles.libraryTitle}>Mi biblioteca</Text>
+
+        <Pressable
+          style={styles.button}
+          onPress={clearLibrary}
+        >
+          <Text style={styles.buttonText}>
+            🧹 Limpiar biblioteca
+          </Text>
+        </Pressable>  
 
         <FlatList
           data={songs}
