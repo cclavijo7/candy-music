@@ -320,9 +320,17 @@ export default function App() {
           }}
         />
 
+      <View style={styles.playbackControls}>
         <Pressable
-          style={styles.button}
-          onPress={() => {
+          style={styles.skipButton}
+          onPress={playPreviousSong}
+        >
+          <Text style={styles.skipButtonText}>⏮</Text>
+        </Pressable> 
+
+        <Pressable
+          style={styles.playButton}
+          onPress={() =>{
             if (status.playing) {
               player.pause();
             } else {
@@ -330,40 +338,33 @@ export default function App() {
             }
           }}
         >
-          <Text style={styles.buttonText}>
-            {status.playing ? "⏸ Pausar" : "▶ Reproducir"}
+          <Text style={styles.playButtonText}>
+            {status.playing ? '⏸' : '▶'}
           </Text>
         </Pressable>
 
         <Pressable
-          style={styles.button}
-          onPress={playPreviousSong}
-          >
-            <Text style={styles.buttonText}>
-              ⏮ Anterior
-            </Text>
-        </Pressable>
-
-        <Pressable
-          style={styles.button}
+          style={styles.skipButton}
           onPress={playNextSong}
-          >
-            <Text style={styles.buttonText}>
-              Siguiente ⏭
-            </Text>
-        </Pressable>
-
-        <Pressable style={styles.button} onPress={openImportMenu}>
-            <Text style={styles.buttonText}>📂 Importar canciones</Text>
-        </Pressable>
-
-        <Pressable
-          style={styles.button}
-          onPress={loadSongs}
-          >
-           <Text style={styles.buttonText}>🔎 Buscar canciones</Text>
+        >
+            <Text style={styles.skipButtonText}>⏭</Text>
         </Pressable>
       </View>
+
+      <View style={styles.secondaryActions}>
+        <Pressable style={styles.secondaryButton} onPress={openImportMenu}>
+            <Text style={styles.secondaryButtonText}>📂 Importar canciones</Text>
+        </Pressable>
+
+        <Pressable
+          style={styles.secondaryButton}
+          onPress={loadSongs}
+          >
+           <Text style={styles.secondaryButtonText}>🔎 Buscar canciones</Text>
+        </Pressable>
+      </View>
+      </View>
+
 
       {importMenuVisible && (
         <View style={styles.importMenu}>
@@ -405,16 +406,29 @@ export default function App() {
         <FlatList
           data={songs}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <Pressable
-              style={styles.songItem}
-              onPress={() => playSong(item)}
+          renderItem={({ item }) => {
+            const isCurrentSong = item.id === currentSongId;
+
+            return (
+              <Pressable
+                style={[
+                  styles.songItem,
+                  isCurrentSong && styles.songItemActive,
+                ]}  
+                onPress={() => playSong(item)}
               >
-                <Text style={styles.songItemText} numberOfLines={1}>
-                  ♫ {item.name}
+                <Text 
+                  style={[
+                    styles.songItemText,
+                    isCurrentSong && styles.songItemTextActive,
+                  ]}
+                  numberOfLines={1}
+                >    
+                 {isCurrentSong ? '♫' : '♪'} {item.name}
                 </Text>
               </Pressable>
-          )}
+            );
+          }}
           ListEmptyComponent={
             <Text style={styles.emptyText}>
               Importa tus canciones para verlas aquí.
@@ -454,7 +468,7 @@ const styles = StyleSheet.create({
     width: '100%',
     backgroundColor: '#1C1C2E',
     borderRadius: 24,
-    padding: 16,
+    padding: 14,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#393653',
@@ -490,14 +504,26 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   songItem: {
-    backgroundColor: '#292940',
-    borderRadius: 12,
-    padding: 12,
+    backgroundColor: '#242337',
+    borderRadius: 14,
+    paddingVertical: 15, 
+    paddingHorizontal: 14,
     marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#302D46',
+  },
+  songItemActive: {
+    backgroundColor: '#302747',
+    borderColor: '#A78BFA',
   },
   songItemText: {
-    color: '#FFFFFF',
+    color: '#D8D5E5',
     fontSize: 14,
+    fontWeight: '500'
+  },
+  songItemTextActive: {
+    color: '#C4B5FD',
+    fontWeight: '700',
   },
   emptyText: {
     color: '#B9B9CC',
@@ -506,12 +532,12 @@ const styles = StyleSheet.create({
   },
   note: {
     color: '#A78BFA',
-    fontSize: 44,
-    marginBottom: 4,
+    fontSize: 40,
+    marginBottom: 2,
   },
   songTitle: {
     color: '#FFFFFF',
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: 'bold',
     textAlign: 'center',
   },
@@ -519,19 +545,19 @@ const styles = StyleSheet.create({
     color: '#B9B9CC',
     fontSize: 14,
     textAlign: 'center',
-    marginTop: 12,
-    lineHeight: 21,
+    marginTop: 8,
+    lineHeight: 20,
   },
   time: {
     color: '#A78BFA',
     fontSize: 13,
     fontWeight: '600',
-    marginTop: 16,
+    marginTop: 10,
   },
   slider: {
     width: '100%',
-    height: 40,
-    marginTop: 4,
+    height: 32,
+    marginTop: 2,
   },
   button: {
     backgroundColor: '#7C3AED',
@@ -546,6 +572,66 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
   },
+  secondaryActions: {
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 10,
+    marginTop: 12,
+  },
+  secondaryButton: {
+    flex: 1,
+    minHeight: 44,
+    backgroundColor: '#29243B',
+    borderWidth: 1,
+    borderColor: '#51436F',
+    paddingHorizontal: 8,
+    paddingVertical: 10,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  secondaryButtonText: {
+    color: '#E9DFFF',
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  playbackControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 24,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  skipButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#302448',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  skipButtonText: {
+    color: '#E9DFFF',
+    fontSize: 23,
+    fontWeight: 'bold',
+  },
+  playButton: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    backgroundColor: '#A78BFA',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  playButtonText: {
+    color: '#21152F',
+    fontSize: 27,
+    fontWeight: 'bold',
+  },
+
   footer: {
     color: '#85859D',
     fontSize: 11,
