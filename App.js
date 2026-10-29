@@ -10,6 +10,8 @@ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
 const musicDirectory = new Directory(Paths.document, 'candy-music-library');
 const libraryFile = new File(musicDirectory, 'library.json');
+const favoritesFile = new File(musicDirectory, 'favorites.json');
+
 const saveLibrary = (songsToSave) => {
   try {
     if (!libraryFile.exists) { 
@@ -22,6 +24,22 @@ const saveLibrary = (songsToSave) => {
     return true;
   } catch (error) {
     console.log('Error al guardar la biblioteca:', error);
+    return false;
+  }
+};
+
+const saveFavorites = (favoriteIds) => {
+  try {
+    if (!favoritesFile.exists) {
+      favoritesFile.create({ intermediates: true });
+    }
+
+    favoritesFile.write(JSON.stringify(favoriteIds, null, 2));
+
+    console.log('Favoritos guardados:', favoriteIds.length);
+    return true;
+  } catch (error) {
+    console.log('Error al guardar los favoritos:', error);
     return false;
   }
 };
@@ -43,7 +61,16 @@ export default function App() {
   const [songTitle, setSongTitle] = useState(null);
   const [currentSongId, setCurrentSongId] = useState(null);
   const [songs, setSongs] = useState([]);
+  const [favoriteSongIds, setFavoriteSongIds] = useState([]);
   const [importMenuVisible, setImportMenuVisible] = useState(false);
+  const [repeatEnabled, setRepeatEnabled] = useState(false);
+  
+  useEffect(() => {
+    player.loop = repeatEnabled;
+
+    console.log('Repetición solicitada:', repeatEnabled);
+    console.log('Repetición  del reproductor:', player.loop);
+  }, [player, repeatEnabled]);
 
   const clearLibrary = () => {
   try {
@@ -54,8 +81,15 @@ export default function App() {
       return;
     }
 
+    const favoritesSaved = saveFavorites([]);
+
+    if (!favoritesSaved) {
+      console.log('No se pudieron guardar los favoritos vacios.');
+    }
+
     player.pause();
     setSongs([]);
+    setFavoriteSongIds([]);
     setSongTitle(null);
     setCurrentSongId(null);
     setSliderPosition(null);
@@ -79,6 +113,16 @@ export default function App() {
           'Carpeta de música preparada:',
           musicDirectory.uri
         );
+
+        if (favoritesFile.exists) {
+          const savedFavoritesContent = await favoritesFile.text();
+          const savedFavorites = JSON.parse(savedFavoritesContent);
+
+          if (Array.isArray(savedFavorites)) {
+            setFavoriteSongIds(savedFavorites);
+            console.log('Favoritos recuperados:', savedFavorites.length);
+          }
+        }
 
         if (!libraryFile.exists) {
           console.log('Todavía no hay una biblioteca guardada:');
@@ -278,6 +322,18 @@ export default function App() {
     setImportMenuVisible(true);
   };
 
+  const toggleFavorite = (songId) => {
+    const updatedFavorites = favoriteSongIds.includes(songId)
+    ? favoriteSongIds.filter((id) => id !== songId)
+    : [...favoriteSongIds, songId];
+
+    const saved = saveFavorites(updatedFavorites);
+
+    if (saved) {
+      setFavoriteSongIds(updatedFavorites);
+    }
+  };
+
   return (
     <SafeAreaProvider>
       <SafeAreaView
@@ -322,6 +378,21 @@ export default function App() {
 
       <View style={styles.playbackControls}>
         <Pressable
+          style={[
+            styles.repeatButton,
+          repeatEnabled && styles.repeatButtonActive
+        ]}
+          onPress={() => {
+            const newRepeatValue = !repeatEnabled;
+
+            console.log('Botón repetición pulsado', newRepeatValue);
+            setRepeatEnabled(newRepeatValue);
+          }}  
+        >
+          <Text style={styles.repeatButtonText}>🔁</Text>  
+        </Pressable>
+        
+        <Pressable
           style={styles.skipButton}
           onPress={playPreviousSong}
         >
@@ -349,6 +420,32 @@ export default function App() {
         >
             <Text style={styles.skipButtonText}>⏭</Text>
         </Pressable>
+
+        <Pressable 
+          style={styles.favoritePlayerButton}
+          onPress={() => {
+            if (currentSongId) {
+              toggleFavorite(currentSongId);
+            }
+          }}
+          disabled={!currentSongId}
+          accessibilityRole="button"
+          accessibilityLabel={
+            favoriteSongIds.includes(currentSongId)
+            ? 'Quitar canción de favoritos'
+            : 'Agregar canción a favoritos'
+          }
+        >
+          <Text 
+            style={[
+              styles.favoritePlayerButtonText,
+              favoriteSongIds.includes(currentSongId) &&
+                styles.favoritePlayerButtonActive,
+            ]}
+          >
+            {favoriteSongIds.includes(currentSongId) ? "♥" : "♡"}
+          </Text>  
+        </Pressable>  
       </View>
 
       <View style={styles.secondaryActions}>
@@ -391,44 +488,50 @@ export default function App() {
         </View>
       )}
 
-      <View style={styles.library}>
+    <View style={styles.library}>  
+      <View style={styles.libraryHeader}>
         <Text style={styles.libraryTitle}>Mi biblioteca</Text>
 
         <Pressable
-          style={styles.button}
+          style={styles.clearLibraryButton}
           onPress={clearLibrary}
         >
-          <Text style={styles.buttonText}>
-            🧹 Limpiar biblioteca
+          <Text style={styles.clearLibraryButtonText}>
+            Limpiar 
           </Text>
         </Pressable>  
+      </View>
 
         <FlatList
           data={songs}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => {
             const isCurrentSong = item.id === currentSongId;
-
+        
             return (
-              <Pressable
-                style={[
-                  styles.songItem,
-                  isCurrentSong && styles.songItemActive,
-                ]}  
-                onPress={() => playSong(item)}
-              >
-                <Text 
+              <View style={styles.songRow}>
+                <Pressable
                   style={[
-                    styles.songItemText,
-                    isCurrentSong && styles.songItemTextActive,
-                  ]}
-                  numberOfLines={1}
-                >    
-                 {isCurrentSong ? '♫' : '♪'} {item.name}
-                </Text>
-              </Pressable>
-            );
+                    styles.songItem,
+                    isCurrentSong && styles.songItemActive,
+                    { flex: 1 },
+                  ]}  
+                  onPress={() => playSong(item)}
+                >
+                  <Text 
+                    style={[
+                      styles.songItemText,
+                      isCurrentSong && styles.songItemTextActive,
+                    ]}
+                    numberOfLines={1}
+                  >    
+                    {isCurrentSong ? '♫' : '♪'} {item.name}
+                  </Text>
+                </Pressable>
+              </View>      
+              );
           }}
+
           ListEmptyComponent={
             <Text style={styles.emptyText}>
               Importa tus canciones para verlas aquí.
@@ -497,20 +600,30 @@ const styles = StyleSheet.create({
     marginTop: 12,
     marginBottom: 8,
   },
+  libraryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  clearLibraryButtonText: {
+    color: '#E9DFFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
   libraryTitle: {
     color: '#A78BFA',
     fontSize: 18,
     fontWeight: 'bold',
-    marginBottom: 12,
+    marginBottom: 0,
+  },
+  songRow: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#302D46',
   },
   songItem: {
-    backgroundColor: '#242337',
-    borderRadius: 14,
-    paddingVertical: 15, 
-    paddingHorizontal: 14,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#302D46',
+    paddingVertical: 12, 
+    paddingHorizontal: 8,
   },
   songItemActive: {
     backgroundColor: '#302747',
@@ -566,6 +679,16 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     marginTop: 10,
   },
+  clearLibraryButton: {
+    backgroundColor: '#29243B',
+    paddingVertical: 9,
+    paddingHorizontal: 16,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#51436F',
+    marginTop: 0,
+    marginBottom: 10,
+  },
   buttonText: {
     color: '#FFFFFF',
     fontSize: 16,
@@ -605,6 +728,25 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 4,
   },
+  repeatButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#29243B',
+    borderWidth: 1,
+    borderColor: '#51436F',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  repeatButtonText: {
+    fontSize: 20,
+    color: '#C4B5FD',
+  },
+  repeatButtonActive: {
+    backgroundColor: '#51436F',
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
   skipButton: {
     width: 48,
     height: 48,
@@ -630,6 +772,23 @@ const styles = StyleSheet.create({
     color: '#21152F',
     fontSize: 27,
     fontWeight: 'bold',
+  },
+  favoritePlayerButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#302448',
+    borderWidth: 1,
+    borderColor: '#51436F',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  favoritePlayerButtonText: {
+    color: '#D8D5E5',
+    fontSize: 25,
+  },
+  favoritePlayerButtonActive: {
+    color: '#FF4D6D',
   },
 
   footer: {
