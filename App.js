@@ -69,6 +69,12 @@ export default function App() {
   const [currentSongId, setCurrentSongId] = useState(null);
   const [songs, setSongs] = useState([]);
   const [favoriteSongIds, setFavoriteSongIds] = useState([]);
+  const [selectedLibrary, setSelectedLibrary] = useState('all');
+
+  const favoriteSongs = songs.filter((song) =>
+    favoriteSongIds.includes(song.id)
+  );
+  
   const [importMenuVisible, setImportMenuVisible] = useState(false);
   const [repeatEnabled, setRepeatEnabled] = useState(false);
   
@@ -554,22 +560,62 @@ export default function App() {
         </View>
       )}
 
-    <View style={styles.library}>  
-      <View style={styles.libraryHeader}>
-        <Text style={styles.libraryTitle}>Mi biblioteca</Text>
+    <View style={styles.library}>
+      <View style={styles.libraryTabs}>
+        <Pressable
+          style={[
+            styles.libraryTab,
+            selectedLibrary === 'all' && styles.libraryTabActive,
+          ]}
+          onPress={() => setSelectedLibrary('all')}
+        >
+          <Text
+            style={[
+              styles.libraryTabText,
+              selectedLibrary === 'all' && styles.libraryTabTextActive,
+            ]}
+          >
+            Mi biblioteca
+          </Text>  
+        </Pressable>  
 
         <Pressable
-          style={styles.clearLibraryButton}
-          onPress={clearLibrary}
+          style={[
+            styles.libraryTab,
+            selectedLibrary === 'favorites' && styles.libraryTabActive,
+          ]}
+          onPress={() => setSelectedLibrary('favorites')}
         >
-          <Text style={styles.clearLibraryButtonText}>
-            Limpiar 
-          </Text>
+          <Text
+            style={[
+              styles.libraryTabText,
+              selectedLibrary === 'favorites' && styles.libraryTabTextActive, 
+            ]}
+          >
+            ♥ Mis favoritos
+          </Text>  
         </Pressable>  
+      </View>  
+
+      <View style={styles.libraryHeader}>
+        <Text style={styles.libraryTitle}>
+          {selectedLibrary === 'favorites' ? 'Mis favoritos' : 'Mi biblioteca'}
+        </Text>
+
+        {selectedLibrary === 'all' && (    
+          <Pressable
+            style={styles.clearLibraryButton}
+            onPress={clearLibrary}
+          >
+            <Text style={styles.clearLibraryButtonText}>
+              Limpiar 
+            </Text>
+          </Pressable> 
+        )}   
       </View>
 
         <FlatList
-          data={songs}
+          data={selectedLibrary === 'favorites' ? favoriteSongs : songs}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => {
             const isCurrentSong = item.id === currentSongId;
@@ -600,7 +646,9 @@ export default function App() {
 
           ListEmptyComponent={
             <Text style={styles.emptyText}>
-              Importa tus canciones para verlas aquí.
+              {selectedLibrary === 'favorites'
+                ? 'Todavía no tienes canciones favoritas.'
+                : 'Importa tus canciones para verlas aquí.'}
             </Text>
           }
           />
@@ -665,6 +713,31 @@ const styles = StyleSheet.create({
     padding: 12,
     marginTop: 12,
     marginBottom: 8,
+  },
+  libraryTabs: {
+    flexDirection: 'row',
+    backgroundColor: '#10101C',
+    borderRadius: 14,
+    padding: 4,
+    marginBottom: 14,
+  },
+  libraryTab: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: 10,
+  },
+  libraryTabActive: {
+    backgroundColor: '#51436F',
+  },
+  libraryTabText: {
+    color: '#B9B9CC',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  libraryTabTextActive: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
   },
   libraryHeader: {
     flexDirection: 'row',
