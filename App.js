@@ -1,5 +1,5 @@
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Directory, File, Paths } from "expo-file-system";
 import { getDocumentAsync } from "expo-document-picker";
 import { Query, requestPermissionsAsync } from "expo-media-library";
@@ -54,8 +54,15 @@ function formatTime(seconds) {
 export default function App() {
   const player = useAudioPlayer(require("./assets/audio/01 Mestizo.mp3"));
   const status = useAudioPlayerStatus(player);
+  const finishHandled = useRef(false);
+  const pendingAutoPlay = useRef(false);
+  const waitingForLoad = useRef(false);
+  const waitingForUnload = useRef(false);
+
   console.log('Estado del reproductor:', status.isLoaded);
   console.log('Error de reproduccion:', status.error);
+  console.log('Está reproduciendo?:', status.playing);
+  console.log('¿Terminó la canción?:', status.didJustFinish);
 
   const [sliderPosition, setSliderPosition] = useState(null);
   const [songTitle, setSongTitle] = useState(null);
@@ -71,6 +78,26 @@ export default function App() {
     console.log('Repetición solicitada:', repeatEnabled);
     console.log('Repetición  del reproductor:', player.loop);
   }, [player, repeatEnabled]);
+
+  useEffect(() => {
+    if (!pendingAutoPlay.current) {
+      return;
+    }
+    
+    if (waitingForUnload.current && !status.isLoaded) {
+      waitingForUnload.current = false;
+      waitingForLoad.current = true;
+      return;
+    }
+
+    if (waitingForLoad.current && status.isLoaded) {
+      pendingAutoPlay.current = false;
+      waitingForLoad.current = false;
+
+      player.play();
+      console.log('Reproducción automática iniciada');
+    }
+  }, [status.isLoaded, player]);
 
   const clearLibrary = () => {
   try {
@@ -275,13 +302,22 @@ export default function App() {
     }
   };
 
-  const playSong = (song) => {
+  const playSong = (song, autoPlay = true) => {
     console.log('Cancion seleccionada:', song.name, song.uri);
     player.replace({ uri: song.uri });
     setSongTitle(song.name);
     setCurrentSongId(song.id);
     setSliderPosition(null);
-    player.play();
+
+    if (autoPlay) {
+      pendingAutoPlay.current = false;
+      waitingForLoad.current = false;
+      player.play();
+    } else {
+      pendingAutoPlay.current = true;
+      waitingForUnload.current = true;
+      waitingForLoad.current = false;
+    }
   };
 
   const playNextSong = () => {
@@ -317,6 +353,31 @@ export default function App() {
     
     playSong(songs[previousIndex]);  
   };
+
+  useEffect(() => {
+    if (!status.didJustFinish) {
+      finishHandled.current = false;
+      return;
+    }
+
+    if (finishHandled.current) {
+      return;
+    }  
+
+    finishHandled.current = true;
+
+    if (repeatEnabled || songs.length <= 1) {
+      return;
+    }
+
+    const currentIndex = songs.findIndex(
+      (song) => song.id === currentSongId
+    );
+    
+    if (currentIndex !== -1 && currentIndex < songs.length - 1) {
+      playSong(songs[currentIndex + 1], false);
+    }
+  }, [status.didJustFinish, repeatEnabled, songs, currentSongId]);
 
   const openImportMenu = () => {
     setImportMenuVisible(true);
