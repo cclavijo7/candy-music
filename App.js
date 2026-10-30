@@ -374,8 +374,13 @@ export default function App() {
       (song) => song.id === currentSongId
     );
     
-    if (currentIndex !== -1 && currentIndex < songs.length - 1) {
-      playSong(songs[currentIndex + 1], false);
+    if (currentIndex !== -1) {
+      const nextIndex =
+        currentIndex === songs.length - 1 
+          ? 0
+          : currentIndex + 1;
+
+      playSong(songs[nextIndex], false);
     }
   }, [status.didJustFinish, repeatEnabled, songs, currentSongId]);
 
