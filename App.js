@@ -5,7 +5,7 @@ import { Directory, File, Paths } from "expo-file-system";
 import { getDocumentAsync } from "expo-document-picker";
 import { Query, requestPermissionsAsync } from "expo-media-library";
 import { StatusBar } from "expo-status-bar";
-import { FlatList, Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { Animated, Easing, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
 import Slider from "@react-native-community/slider";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
@@ -56,6 +56,16 @@ export default function App() {
   const player = useAudioPlayer(require("./assets/audio/01 Mestizo.mp3"));
   const status = useAudioPlayerStatus(player);
   const finishHandled = useRef(false);
+  const artworkScale = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    Animated.timing(artworkScale, {
+      toValue: status.playing ? 1.05 : 1,
+      duration: 600,
+      easing: Easing.inOut(Easing.ease),
+      useNativeDriver: true,
+    }).start();
+  }, [status.playing, artworkScale]);
+
   const pendingAutoPlay = useRef(false);
   const waitingForLoad = useRef(false);
   const waitingForUnload = useRef(false);
@@ -431,13 +441,27 @@ export default function App() {
 
       <View style={styles.player}>
         {currentSong?.artwork ? (
-          <Image
+          <Animated.Image
             source={{ uri: currentSong.artwork }}
-            style={styles.artwork}
+            style={[
+              styles.artwork,
+            {
+              transform: [{ scale: artworkScale }],
+            },
+            ]}  
             resizeMode="cover"
           />
         ) : (
-           <Text style={styles.note}>♫</Text>
+          <Animated.Text 
+             style={[
+               styles.note,
+               {
+                 transform: [{ scale: artworkScale }],
+               },
+             ]}
+          >
+            ♫
+          </Animated.Text>  
         )}
 
         <Text style={styles.songTitle}>
