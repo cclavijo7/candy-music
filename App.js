@@ -58,13 +58,42 @@ export default function App() {
   const finishHandled = useRef(false);
   const artworkScale = useRef(new Animated.Value(1)).current;
   useEffect(() => {
-    Animated.timing(artworkScale, {
-      toValue: status.playing ? 1.05 : 1,
-      duration: 600,
-      easing: Easing.inOut(Easing.ease),
-      useNativeDriver: true,
-    }).start();
-  }, [status.playing, artworkScale]);
+    if (!status.playing) {
+      artworkScale.stopAnimation();
+
+      Animated.timing(artworkScale, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+
+      return;
+    }
+
+    const pulseAnimation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(artworkScale, {
+          toValue: 1.04,
+          duration: 1000,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+
+        Animated.timing(artworkScale, {
+          toValue: 1,
+          duration: 1000,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    pulseAnimation.start();
+
+    return () => {
+      pulseAnimation.stop();
+    };
+  }, [status.playing, artworkScale]);  
 
   const pendingAutoPlay = useRef(false);
   const waitingForLoad = useRef(false);
