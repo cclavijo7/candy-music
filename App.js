@@ -1,10 +1,11 @@
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
+import { getAudioMetadata } from "@missingcore/audio-metadata";
 import { useEffect, useRef, useState } from "react";
 import { Directory, File, Paths } from "expo-file-system";
 import { getDocumentAsync } from "expo-document-picker";
 import { Query, requestPermissionsAsync } from "expo-media-library";
 import { StatusBar } from "expo-status-bar";
-import { FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { FlatList, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import Slider from "@react-native-community/slider";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
@@ -14,7 +15,7 @@ const favoritesFile = new File(musicDirectory, 'favorites.json');
 
 const saveLibrary = (songsToSave) => {
   try {
-    if (!libraryFile.exists) { 
+    if (!libraryFile.exists) {
       libraryFile.create({ intermediates: true });
     }
 
@@ -74,10 +75,11 @@ export default function App() {
   const favoriteSongs = songs.filter((song) =>
     favoriteSongIds.includes(song.id)
   );
-  
+
+  const currentSong = songs.find((song) => song.id === currentSongId);
   const [importMenuVisible, setImportMenuVisible] = useState(false);
   const [repeatEnabled, setRepeatEnabled] = useState(false);
-  
+
   useEffect(() => {
     player.loop = repeatEnabled;
 
@@ -89,7 +91,7 @@ export default function App() {
     if (!pendingAutoPlay.current) {
       return;
     }
-    
+
     if (waitingForUnload.current && !status.isLoaded) {
       waitingForUnload.current = false;
       waitingForLoad.current = true;
@@ -108,7 +110,7 @@ export default function App() {
   const clearLibrary = () => {
   try {
     const saved = saveLibrary([]);
-  
+
     if (!saved) {
       console.log('No se pudo vaciar la biblioteca guardada.');
       return;
@@ -273,11 +275,20 @@ export default function App() {
 
       await sourceFile.copy(destinationFile);
       console.log('Archivo copiado:', destinationFile.uri);
+      const audioData = await getAudioMetadata(destinationFile.uri, [
+        'name',
+        'artist',
+        'album',
+        'artwork',
+      ]);
 
       const importedSongs = {
         id: destinationFile.uri,
-        name: song.name,
+        name: audioData.metadata.name || song.name,
         uri: destinationFile.uri,
+        artist: audioData.metadata.artist || 'Artista desconocido',
+        album: audioData.metadata.album || 'Album desconocido',
+        artwork: audioData.metadata.artwork || null,
       };
 
       newSongs.push(importedSongs);
@@ -287,7 +298,7 @@ export default function App() {
     const updatedSongs = [...songs, ...newSongs];
 
     setSongs(updatedSongs);
-    
+
     const saved = saveLibrary(updatedSongs);
 
     console.log('Canciones nuevas importadas:', newSongs.length);
@@ -335,12 +346,12 @@ export default function App() {
       (song) => song.id === currentSongId
     );
 
-    const nextIndex = 
+    const nextIndex =
       currentIndex === -1 || currentIndex === songs.length - 1
       ? 0
       : currentIndex + 1;
 
-    playSong(songs[nextIndex]);  
+    playSong(songs[nextIndex]);
   };
 
   const playPreviousSong = () => {
@@ -356,8 +367,8 @@ export default function App() {
       currentIndex <= 0
       ? songs.length - 1
       : currentIndex - 1;
-    
-    playSong(songs[previousIndex]);  
+
+    playSong(songs[previousIndex]);
   };
 
   useEffect(() => {
@@ -368,7 +379,7 @@ export default function App() {
 
     if (finishHandled.current) {
       return;
-    }  
+    }
 
     finishHandled.current = true;
 
@@ -379,10 +390,10 @@ export default function App() {
     const currentIndex = songs.findIndex(
       (song) => song.id === currentSongId
     );
-    
+
     if (currentIndex !== -1) {
       const nextIndex =
-        currentIndex === songs.length - 1 
+        currentIndex === songs.length - 1
           ? 0
           : currentIndex + 1;
 
@@ -419,7 +430,16 @@ export default function App() {
       <Text style={styles.subtitle}>Tu música, a tu manera.</Text>
 
       <View style={styles.player}>
-        <Text style={styles.note}>♫</Text>
+        {currentSong?.artwork ? (
+          <Image
+            source={{ uri: currentSong.artwork }}
+            style={styles.artwork}
+            resizeMode="cover"
+          />
+        ) : (
+           <Text style={styles.note}>♫</Text>
+        )}
+
         <Text style={styles.songTitle}>
           {songTitle || 'Elige una canción'}
         </Text>
@@ -459,17 +479,17 @@ export default function App() {
 
             console.log('Botón repetición pulsado', newRepeatValue);
             setRepeatEnabled(newRepeatValue);
-          }}  
+          }}
         >
-          <Text style={styles.repeatButtonText}>🔁</Text>  
+          <Text style={styles.repeatButtonText}>🔁</Text>
         </Pressable>
-        
+
         <Pressable
           style={styles.skipButton}
           onPress={playPreviousSong}
         >
           <Text style={styles.skipButtonText}>⏮</Text>
-        </Pressable> 
+        </Pressable>
 
         <Pressable
           style={styles.playButton}
@@ -493,7 +513,7 @@ export default function App() {
             <Text style={styles.skipButtonText}>⏭</Text>
         </Pressable>
 
-        <Pressable 
+        <Pressable
           style={styles.favoritePlayerButton}
           onPress={() => {
             if (currentSongId) {
@@ -508,7 +528,7 @@ export default function App() {
             : 'Agregar canción a favoritos'
           }
         >
-          <Text 
+          <Text
             style={[
               styles.favoritePlayerButtonText,
               favoriteSongIds.includes(currentSongId) &&
@@ -516,8 +536,8 @@ export default function App() {
             ]}
           >
             {favoriteSongIds.includes(currentSongId) ? "♥" : "♡"}
-          </Text>  
-        </Pressable>  
+          </Text>
+        </Pressable>
       </View>
 
       <View style={styles.secondaryActions}>
@@ -576,8 +596,8 @@ export default function App() {
             ]}
           >
             Mi biblioteca
-          </Text>  
-        </Pressable>  
+          </Text>
+        </Pressable>
 
         <Pressable
           style={[
@@ -589,29 +609,29 @@ export default function App() {
           <Text
             style={[
               styles.libraryTabText,
-              selectedLibrary === 'favorites' && styles.libraryTabTextActive, 
+              selectedLibrary === 'favorites' && styles.libraryTabTextActive,
             ]}
           >
             ♥ Mis favoritos
-          </Text>  
-        </Pressable>  
-      </View>  
+          </Text>
+        </Pressable>
+      </View>
 
       <View style={styles.libraryHeader}>
         <Text style={styles.libraryTitle}>
           {selectedLibrary === 'favorites' ? 'Mis favoritos' : 'Mi biblioteca'}
         </Text>
 
-        {selectedLibrary === 'all' && (    
+        {selectedLibrary === 'all' && (
           <Pressable
             style={styles.clearLibraryButton}
             onPress={clearLibrary}
           >
             <Text style={styles.clearLibraryButtonText}>
-              Limpiar 
+              Limpiar
             </Text>
-          </Pressable> 
-        )}   
+          </Pressable>
+        )}
       </View>
 
         <FlatList
@@ -619,7 +639,7 @@ export default function App() {
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => {
             const isCurrentSong = item.id === currentSongId;
-        
+
             return (
               <View style={styles.songRow}>
                 <Pressable
@@ -627,20 +647,20 @@ export default function App() {
                     styles.songItem,
                     isCurrentSong && styles.songItemActive,
                     { flex: 1 },
-                  ]}  
+                  ]}
                   onPress={() => playSong(item)}
                 >
-                  <Text 
+                  <Text
                     style={[
                       styles.songItemText,
                       isCurrentSong && styles.songItemTextActive,
                     ]}
                     numberOfLines={1}
-                  >    
+                  >
                     {isCurrentSong ? '♫' : '♪'} {item.name}
                   </Text>
                 </Pressable>
-              </View>      
+              </View>
               );
           }}
 
@@ -761,7 +781,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#302D46',
   },
   songItem: {
-    paddingVertical: 12, 
+    paddingVertical: 12,
     paddingHorizontal: 8,
   },
   songItemActive: {
@@ -786,6 +806,13 @@ const styles = StyleSheet.create({
     color: '#A78BFA',
     fontSize: 40,
     marginBottom: 2,
+  },
+  artwork: {
+    width: 180,
+    height: 180,
+    borderRadius: 16,
+    marginBottom: 10,
+    backgroundColor: '#29243B',
   },
   songTitle: {
     color: '#FFFFFF',
