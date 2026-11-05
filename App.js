@@ -5,7 +5,7 @@ import { Directory, File, Paths } from "expo-file-system";
 import { getDocumentAsync } from "expo-document-picker";
 import { Query, requestPermissionsAsync } from "expo-media-library";
 import { StatusBar } from "expo-status-bar";
-import { Animated, Easing, FlatList, Keyboard, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Animated, Easing, FlatList, Keyboard, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import Slider from "@react-native-community/slider";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
@@ -492,6 +492,62 @@ export default function App() {
     }
   };
 
+  const removeSongFromLibrary = (song) => {
+    Alert.alert(
+      'Quitar canción',
+      `¿Quieres quitar "${song.name}" de tu biblioteca? También se quitará de Favoritos, pero el archivo de audio permanecerá en tu teléfono.`,
+      [
+        {
+          text: 'Cancelar',
+          style: 'cancel',
+        },
+        {
+          text: 'Quitar',
+          style: 'destructive',
+          onPress: () => {
+            const updatedSongs = songs.filter(
+              (item) => item.id !== song.id
+            );
+
+            const updatedFavorites = favoriteSongIds.filter(
+              (id) => id !== song.id
+            );
+
+            const librarySaved = saveLibrary(updatedSongs);
+            const favoritesSaved = saveFavorites(updatedFavorites);
+
+            if(!librarySaved || !favoritesSaved) {
+              const libraryRestored = saveLibrary(songs);
+              const favoriteRestored = saveFavorites(favoriteSongIds);
+
+              console.log('Biblioteca restaurada:', libraryRestored);
+              console.log('Favoritos restaurados:', favoriteRestored);
+              
+              Alert.alert(
+                'Error',
+                'No se pudo actualizar la biblioteca. Inténtalo nuevamente.'
+              );
+              return;
+            }
+
+            setSongs(updatedSongs);
+            setFavoriteSongIds(updatedFavorites);
+
+            if(currentSongId === song.id) {
+              player.pause();
+              setSongTitle(null);
+              setCurrentSongId(null);
+              setSliderPosition(null);
+            }
+
+            console.log('Canción retirada de la biblioteca:', song.name);
+            console.log('Archivo de audio conservado:', song.uri);
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <SafeAreaProvider>
       <SafeAreaView
@@ -783,8 +839,27 @@ export default function App() {
                       {isCurrentSong ? '♫' : '♪'} {item.name}
                     </Text>
                   </Pressable>
+
+                  <Pressable
+                    style={styles.removeSongButton}
+                    onPress={() => {
+                      if (selectedLibrary === 'favorites') {
+                        toggleFavorite(item.id);
+                      } else {
+                        removeSongFromLibrary(item);
+                      }
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                      selectedLibrary === 'favorites'
+                      ? 'Quitar de favoritos'
+                      : 'Quitar de la biblioteca'
+                    }
+                  >
+                    <Text style={styles.removeSongButtonText}>✕</Text>
+                  </Pressable>  
                 </View>
-                );
+              ); 
             }}
 
             ListEmptyComponent={
@@ -932,8 +1007,21 @@ const styles = StyleSheet.create({
     marginBottom: 0,
   },
   songRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderBottomWidth: 1,
     borderBottomColor: '#302D46',
+  },
+  removeSongButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  removeSongButtonText: {
+    color: '#A78BFA',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
   songItem: {
     paddingVertical: 12,
