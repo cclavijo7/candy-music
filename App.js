@@ -5,7 +5,7 @@ import { Directory, File, Paths } from "expo-file-system";
 import { getDocumentAsync } from "expo-document-picker";
 import { Query, requestPermissionsAsync } from "expo-media-library";
 import { StatusBar } from "expo-status-bar";
-import { Animated, Easing, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { Animated, Easing, FlatList, Keyboard, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import Slider from "@react-native-community/slider";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
@@ -110,15 +110,51 @@ export default function App() {
   const [songs, setSongs] = useState([]);
   const [favoriteSongIds, setFavoriteSongIds] = useState([]);
   const [selectedLibrary, setSelectedLibrary] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortOrder, setSortOrder] = useState('asc');
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
 
   const favoriteSongs = songs.filter((song) =>
     favoriteSongIds.includes(song.id)
   );
 
+  const displayedSongs = (
+    selectedLibrary === 'favorites' ? favoriteSongs : songs
+  )
+    .filter((song) =>
+      song.name.toLowerCase().includes(searchQuery.toLowerCase())
+  )
+    .sort((a, b) => {
+      const comparison = a.name.localeCompare(
+        b.name,
+        'es',
+        { sensitivity: 'base' }
+      );
+
+      return sortOrder === 'asc' ? comparison : -comparison;
+    });
+
   const currentSong = songs.find((song) => song.id === currentSongId);
   const [importMenuVisible, setImportMenuVisible] = useState(false);
   const [repeatEnabled, setRepeatEnabled] = useState(false);
 
+  useEffect(() => {
+    const showSubscription = Keyboard.addListener(
+      'keyboardDidShow',
+      () => setKeyboardVisible(true)
+    );
+
+    const hideSubscription  = Keyboard.addListener(
+      'keyboardDidHide',
+      () => setKeyboardVisible(false)
+    );
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
+  
   useEffect(() => {
     player.loop = repeatEnabled;
 
@@ -461,151 +497,162 @@ export default function App() {
       <SafeAreaView
         style={styles.container}
         edges={['top', 'right', 'bottom', 'left']}
+    >
+
+      <KeyboardAvoidingView
+        style={{ flex: 1, width: '100%' }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
       >
 
       <StatusBar style="light" />
 
-      <Text style={styles.title}>CANDY MUSIC</Text>
-      <Text style={styles.subtitle}>Tu música, a tu manera.</Text>
+      <View style={{ display: keyboardVisible ? 'none' : 'flex' }}>
 
-      <View style={styles.player}>
-        {currentSong?.artwork ? (
-          <Animated.Image
-            source={{ uri: currentSong.artwork }}
-            style={[
-              styles.artwork,
-            {
-              transform: [{ scale: artworkScale }],
-            },
-            ]}  
-            resizeMode="cover"
+      <View style={styles.header}>
+        <Text style={styles.title}>CANDY MUSIC</Text>
+        <Text style={styles.subtitle}>Tu música, a tu manera.</Text>
+      </View>
+
+        <View style={styles.player}>
+          {currentSong?.artwork ? (
+            <Animated.Image
+              source={{ uri: currentSong.artwork }}
+              style={[
+                styles.artwork,
+              {
+                transform: [{ scale: artworkScale }],
+              },
+              ]}  
+              resizeMode="cover"
+            />
+          ) : (
+            <Animated.Text 
+              style={[
+                styles.note,
+                {
+                  transform: [{ scale: artworkScale }],
+                },
+              ]}
+            >
+              ♫
+            </Animated.Text>  
+          )}
+
+          <Text style={styles.songTitle}>
+            {songTitle || 'Elige una canción'}
+          </Text>
+          <Text style={styles.message}>
+            Tu música, siempre contigo.
+          </Text>
+
+          <Text style={styles.time}>
+            {formatTime(status.currentTime)} / {formatTime(status.duration)}
+          </Text>
+
+          <Slider
+            style={styles.slider}
+            minimumValue={0}
+            maximumValue={status.duration || 1}
+            value={sliderPosition ?? status.currentTime}
+            minimumTrackTintColor="#A78BFA"
+            maximumTrackTintColor="#393653"
+            thumbTintColor="#A78BFA"
+            onValueChange={(value) => {
+              setSliderPosition(value);
+            }}
+            onSlidingComplete={async(value) => {
+              await player.seekTo(value);
+              setSliderPosition(null);
+            }}
           />
-        ) : (
-          <Animated.Text 
-             style={[
-               styles.note,
-               {
-                 transform: [{ scale: artworkScale }],
-               },
-             ]}
-          >
-            ♫
-          </Animated.Text>  
-        )}
 
-        <Text style={styles.songTitle}>
-          {songTitle || 'Elige una canción'}
-        </Text>
-        <Text style={styles.message}>
-          Tu música, siempre contigo.
-        </Text>
-
-        <Text style={styles.time}>
-          {formatTime(status.currentTime)} / {formatTime(status.duration)}
-        </Text>
-
-        <Slider
-          style={styles.slider}
-          minimumValue={0}
-          maximumValue={status.duration || 1}
-          value={sliderPosition ?? status.currentTime}
-          minimumTrackTintColor="#A78BFA"
-          maximumTrackTintColor="#393653"
-          thumbTintColor="#A78BFA"
-          onValueChange={(value) => {
-            setSliderPosition(value);
-          }}
-          onSlidingComplete={async(value) => {
-            await player.seekTo(value);
-            setSliderPosition(null);
-          }}
-        />
-
-      <View style={styles.playbackControls}>
-        <Pressable
-          style={[
-            styles.repeatButton,
-          repeatEnabled && styles.repeatButtonActive
-        ]}
-          onPress={() => {
-            const newRepeatValue = !repeatEnabled;
-
-            console.log('Botón repetición pulsado', newRepeatValue);
-            setRepeatEnabled(newRepeatValue);
-          }}
-        >
-          <Text style={styles.repeatButtonText}>🔁</Text>
-        </Pressable>
-
-        <Pressable
-          style={styles.skipButton}
-          onPress={playPreviousSong}
-        >
-          <Text style={styles.skipButtonText}>⏮</Text>
-        </Pressable>
-
-        <Pressable
-          style={styles.playButton}
-          onPress={() =>{
-            if (status.playing) {
-              player.pause();
-            } else {
-              player.play();
-            }
-          }}
-        >
-          <Text style={styles.playButtonText}>
-            {status.playing ? '⏸' : '▶'}
-          </Text>
-        </Pressable>
-
-        <Pressable
-          style={styles.skipButton}
-          onPress={playNextSong}
-        >
-            <Text style={styles.skipButtonText}>⏭</Text>
-        </Pressable>
-
-        <Pressable
-          style={styles.favoritePlayerButton}
-          onPress={() => {
-            if (currentSongId) {
-              toggleFavorite(currentSongId);
-            }
-          }}
-          disabled={!currentSongId}
-          accessibilityRole="button"
-          accessibilityLabel={
-            favoriteSongIds.includes(currentSongId)
-            ? 'Quitar canción de favoritos'
-            : 'Agregar canción a favoritos'
-          }
-        >
-          <Text
+        <View style={styles.playbackControls}>
+          <Pressable
             style={[
-              styles.favoritePlayerButtonText,
-              favoriteSongIds.includes(currentSongId) &&
-                styles.favoritePlayerButtonActive,
-            ]}
-          >
-            {favoriteSongIds.includes(currentSongId) ? "♥" : "♡"}
-          </Text>
-        </Pressable>
-      </View>
+              styles.repeatButton,
+            repeatEnabled && styles.repeatButtonActive
+          ]}
+            onPress={() => {
+              const newRepeatValue = !repeatEnabled;
 
-      <View style={styles.secondaryActions}>
-        <Pressable style={styles.secondaryButton} onPress={openImportMenu}>
-            <Text style={styles.secondaryButtonText}>📂 Importar canciones</Text>
-        </Pressable>
-
-        <Pressable
-          style={styles.secondaryButton}
-          onPress={loadSongs}
+              console.log('Botón repetición pulsado', newRepeatValue);
+              setRepeatEnabled(newRepeatValue);
+            }}
           >
-           <Text style={styles.secondaryButtonText}>🔎 Buscar canciones</Text>
-        </Pressable>
-      </View>
-      </View>
+            <Text style={styles.repeatButtonText}>🔁</Text>
+          </Pressable>
+
+          <Pressable
+            style={styles.skipButton}
+            onPress={playPreviousSong}
+          >
+            <Text style={styles.skipButtonText}>⏮</Text>
+          </Pressable>
+
+          <Pressable
+            style={styles.playButton}
+            onPress={() =>{
+              if (status.playing) {
+                player.pause();
+              } else {
+                player.play();
+              }
+            }}
+          >
+            <Text style={styles.playButtonText}>
+              {status.playing ? '⏸' : '▶'}
+            </Text>
+          </Pressable>
+
+          <Pressable
+            style={styles.skipButton}
+            onPress={playNextSong}
+          >
+              <Text style={styles.skipButtonText}>⏭</Text>
+          </Pressable>
+
+          <Pressable
+            style={styles.favoritePlayerButton}
+            onPress={() => {
+              if (currentSongId) {
+                toggleFavorite(currentSongId);
+              }
+            }}
+            disabled={!currentSongId}
+            accessibilityRole="button"
+            accessibilityLabel={
+              favoriteSongIds.includes(currentSongId)
+              ? 'Quitar canción de favoritos'
+              : 'Agregar canción a favoritos'
+            }
+          >
+            <Text
+              style={[
+                styles.favoritePlayerButtonText,
+                favoriteSongIds.includes(currentSongId) &&
+                  styles.favoritePlayerButtonActive,
+              ]}
+            >
+              {favoriteSongIds.includes(currentSongId) ? "♥" : "♡"}
+            </Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.secondaryActions}>
+          <Pressable style={styles.secondaryButton} onPress={openImportMenu}>
+              <Text style={styles.secondaryButtonText}>📂 Importar canciones</Text>
+          </Pressable>
+
+          <Pressable
+            style={styles.secondaryButton}
+            onPress={loadSongs}
+            >
+            <Text style={styles.secondaryButtonText}>🔎 Buscar canciones</Text>
+          </Pressable>
+        </View>
+        </View>
+      </View>  
 
 
       {importMenuVisible && (
@@ -633,101 +680,125 @@ export default function App() {
         </View>
       )}
 
-    <View style={styles.library}>
-      <View style={styles.libraryTabs}>
-        <Pressable
-          style={[
-            styles.libraryTab,
-            selectedLibrary === 'all' && styles.libraryTabActive,
-          ]}
-          onPress={() => setSelectedLibrary('all')}
-        >
-          <Text
-            style={[
-              styles.libraryTabText,
-              selectedLibrary === 'all' && styles.libraryTabTextActive,
-            ]}
-          >
-            Mi biblioteca
-          </Text>
-        </Pressable>
-
-        <Pressable
-          style={[
-            styles.libraryTab,
-            selectedLibrary === 'favorites' && styles.libraryTabActive,
-          ]}
-          onPress={() => setSelectedLibrary('favorites')}
-        >
-          <Text
-            style={[
-              styles.libraryTabText,
-              selectedLibrary === 'favorites' && styles.libraryTabTextActive,
-            ]}
-          >
-            ♥ Mis favoritos
-          </Text>
-        </Pressable>
-      </View>
-
-      <View style={styles.libraryHeader}>
-        <Text style={styles.libraryTitle}>
-          {selectedLibrary === 'favorites' ? 'Mis favoritos' : 'Mi biblioteca'}
-        </Text>
-
-        {selectedLibrary === 'all' && (
+      <View style={styles.library}>
+        <View style={styles.libraryTabs}>
           <Pressable
-            style={styles.clearLibraryButton}
-            onPress={clearLibrary}
+            style={[
+              styles.libraryTab,
+              selectedLibrary === 'all' && styles.libraryTabActive,
+            ]}
+            onPress={() => setSelectedLibrary('all')}
           >
-            <Text style={styles.clearLibraryButtonText}>
-              Limpiar
+            <Text
+              style={[
+                styles.libraryTabText,
+                selectedLibrary === 'all' && styles.libraryTabTextActive,
+              ]}
+            >
+              Mi biblioteca
             </Text>
           </Pressable>
-        )}
-      </View>
 
-        <FlatList
-          data={selectedLibrary === 'favorites' ? favoriteSongs : songs}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => {
-            const isCurrentSong = item.id === currentSongId;
-
-            return (
-              <View style={styles.songRow}>
-                <Pressable
-                  style={[
-                    styles.songItem,
-                    isCurrentSong && styles.songItemActive,
-                    { flex: 1 },
-                  ]}
-                  onPress={() => playSong(item)}
-                >
-                  <Text
-                    style={[
-                      styles.songItemText,
-                      isCurrentSong && styles.songItemTextActive,
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {isCurrentSong ? '♫' : '♪'} {item.name}
-                  </Text>
-                </Pressable>
-              </View>
-              );
-          }}
-
-          ListEmptyComponent={
-            <Text style={styles.emptyText}>
-              {selectedLibrary === 'favorites'
-                ? 'Todavía no tienes canciones favoritas.'
-                : 'Importa tus canciones para verlas aquí.'}
+          <Pressable
+            style={[
+              styles.libraryTab,
+              selectedLibrary === 'favorites' && styles.libraryTabActive,
+            ]}
+            onPress={() => setSelectedLibrary('favorites')}
+          >
+            <Text
+              style={[
+                styles.libraryTabText,
+                selectedLibrary === 'favorites' && styles.libraryTabTextActive,
+              ]}
+            >
+              ♥ Mis favoritos
             </Text>
-          }
-          />
-      </View>
+          </Pressable>
+        </View>
 
-      <Text style={styles.footer}> TU MÚSICA. TU MOMENTO</Text>
+        <View style={styles.libraryHeader}>
+          <Text style={styles.libraryTitle}>
+            {selectedLibrary === 'favorites' ? 'Mis favoritos' : 'Mi biblioteca'}
+          </Text>
+
+          <Pressable
+            style={styles.sortButton}
+            onPress={() => {
+              setSortOrder((currentOrder) =>
+                currentOrder === 'asc' ? 'desc' : 'asc'
+              );
+            }}
+          >
+            <Text style={styles.sortButtonText}>
+              {sortOrder === 'asc' ? 'A-Z ↕' : 'Z-A ↕'}
+            </Text>
+          </Pressable>  
+
+          {selectedLibrary === 'all' && (
+            <Pressable
+              style={styles.clearLibraryButton}
+              onPress={clearLibrary}
+            >
+              <Text style={styles.clearLibraryButtonText}>Limpiar</Text>
+            </Pressable>
+          )}
+        </View>
+
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Buscar una canción..."
+          placeholderTextColor='#85859D'
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />  
+
+          <FlatList
+            data={displayedSongs}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => {
+              const isCurrentSong = item.id === currentSongId;
+
+              return (
+                <View style={styles.songRow}>
+                  <Pressable
+                    style={[
+                      styles.songItem,
+                      isCurrentSong && styles.songItemActive,
+                      { flex: 1 },
+                    ]}
+                    onPress={() => playSong(item)}
+                  >
+                    <Text
+                      style={[
+                        styles.songItemText,
+                        isCurrentSong && styles.songItemTextActive,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {isCurrentSong ? '♫' : '♪'} {item.name}
+                    </Text>
+                  </Pressable>
+                </View>
+                );
+            }}
+
+            ListEmptyComponent={
+              <Text style={styles.emptyText}>
+                {selectedLibrary === 'favorites'
+                  ? 'Todavía no tienes canciones favoritas.'
+                  : 'Importa tus canciones para verlas aquí.'}
+              </Text>
+            }
+            />
+        </View>
+
+        <Text style={styles.footer}> TU MÚSICA. TU MOMENTO</Text>
+      </KeyboardAvoidingView>  
     </SafeAreaView>
   </SafeAreaProvider>
   );
@@ -741,6 +812,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 6,
+  },
+  header: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   title: {
     color: '#A78BFA',
@@ -817,6 +893,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 8,
+  },
+  sortButton: {
+    backgroundColor: '#29243B',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#51436F',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sortButtonText: {
+    color: '#E9DFFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  searchInput: {
+    backgroundColor: '#10101C',
+    borderWidth: 1,
+    borderColor: '#51436F',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    color: '#FFFFFF',
+    fontSize: 14,
+    marginBottom: 10,
   },
   clearLibraryButtonText: {
     color: '#E9DFFF',
