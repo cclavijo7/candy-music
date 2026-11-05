@@ -111,6 +111,7 @@ export default function App() {
   const [favoriteSongIds, setFavoriteSongIds] = useState([]);
   const [selectedLibrary, setSelectedLibrary] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchVisible, setSearchVisible] = useState(false);
   const [sortOrder, setSortOrder] = useState('asc');
   const [keyboardVisible, setKeyboardVisible] = useState(false);
 
@@ -522,7 +523,7 @@ export default function App() {
 
               console.log('Biblioteca restaurada:', libraryRestored);
               console.log('Favoritos restaurados:', favoriteRestored);
-              
+
               Alert.alert(
                 'Error',
                 'No se pudo actualizar la biblioteca. Inténtalo nuevamente.'
@@ -570,7 +571,8 @@ export default function App() {
         <Text style={styles.subtitle}>Tu música, a tu manera.</Text>
       </View>
 
-        <View style={styles.player}>
+      <View style={styles.player}>
+        <View style={styles.artworkContainer}>
           {currentSong?.artwork ? (
             <Animated.Image
               source={{ uri: currentSong.artwork }}
@@ -594,6 +596,7 @@ export default function App() {
               ♫
             </Animated.Text>  
           )}
+        </View>
 
           <Text style={styles.songTitle}>
             {songTitle || 'Elige una canción'}
@@ -789,6 +792,27 @@ export default function App() {
             <Text style={styles.sortButtonText}>
               {sortOrder === 'asc' ? 'A-Z ↕' : 'Z-A ↕'}
             </Text>
+          </Pressable>
+
+          <Pressable
+            style={styles.searchToggleButton}
+            onPress={() => {
+              if (searchVisible) {
+                setSearchVisible(false);
+                setSearchQuery('');
+                Keyboard.dismiss();
+              } else {
+                setSearchVisible(true);
+              }
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={
+              searchVisible ? 'Cerrar búsqueda' : 'Abrir búsqueda'
+            }
+          >
+            <Text style={styles.searchToggleButtonText}>
+              {searchVisible ? 'X' : '⌕'}
+            </Text>
           </Pressable>  
 
           {selectedLibrary === 'all' && (
@@ -801,17 +825,20 @@ export default function App() {
           )}
         </View>
 
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Buscar una canción..."
-          placeholderTextColor='#85859D'
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />  
+        {searchVisible && (  
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Buscar una canción..."
+            placeholderTextColor='#85859D'
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />  
+        )}
 
           <FlatList
+            style={{ flex: 1 }}
             data={displayedSongs}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"
@@ -909,7 +936,7 @@ const styles = StyleSheet.create({
     width: '100%',
     backgroundColor: '#1C1C2E',
     borderRadius: 24,
-    padding: 14,
+    padding: 12,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#393653',
@@ -984,6 +1011,21 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
+  searchToggleButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: '#29243B',
+    borderWidth: 1,
+    borderColor: '#51436F',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  searchToggleButtonText: {
+    color: '#C4B5FD',
+    fontSize: 25,
+    fontWeight: '600',
+  },
   searchInput: {
     backgroundColor: '#10101C',
     borderWidth: 1,
@@ -1045,16 +1087,21 @@ const styles = StyleSheet.create({
     fontSize: 14,
     paddingVertical: 8,
   },
+  artworkContainer: {
+    width: 115,
+    height: 115,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+  },
   note: {
     color: '#A78BFA',
-    fontSize: 40,
-    marginBottom: 2,
+    fontSize: 48,
   },
   artwork: {
-    width: 180,
-    height: 180,
+    width: '100%',
+    height: '100%',
     borderRadius: 16,
-    marginBottom: 10,
     backgroundColor: '#29243B',
   },
   songTitle: {
@@ -1109,7 +1156,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     gap: 10,
-    marginTop: 12,
+    marginTop: 8,
   },
   secondaryButton: {
     flex: 1,
@@ -1133,14 +1180,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 24,
-    marginTop: 8,
-    marginBottom: 4,
+    gap: 16,
+    marginTop: 4,
+    marginBottom: 2,
   },
   repeatButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: '#29243B',
     borderWidth: 1,
     borderColor: '#51436F',
@@ -1157,9 +1204,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   skipButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: '#302448',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1170,9 +1217,9 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   playButton: {
-    width: 62,
-    height: 62,
-    borderRadius: 31,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: '#A78BFA',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1183,9 +1230,9 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   favoritePlayerButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: '#302448',
     borderWidth: 1,
     borderColor: '#51436F',
