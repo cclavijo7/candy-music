@@ -601,6 +601,19 @@ export default function App() {
           <Text style={styles.songTitle}>
             {songTitle || 'Elige una canción'}
           </Text>
+
+          {currentSong && (
+            <>
+              <Text style={styles.songArtist} numberOfLines={1}>
+                {currentSong.artist || 'Artista desconocido'}
+              </Text>
+
+              <Text style={styles.songAlbum} numberOfLines={1}>
+                {currentSong.album || 'Album desconocido'}
+              </Text>
+            </>
+          )}
+
           <Text style={styles.message}>
             Tu música, siempre contigo.
           </Text>
@@ -1109,6 +1122,19 @@ const styles = StyleSheet.create({
     fontSize: 19,
     fontWeight: 'bold',
     textAlign: 'center',
+  },
+  songArtist: {
+    color: '#C4B5FD',
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  songAlbum: {
+    color: '#85859D',
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 2,
   },
   message: {
     color: '#B9B9CC',
