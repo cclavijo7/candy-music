@@ -5,7 +5,7 @@ import { Directory, File, Paths } from "expo-file-system";
 import { getDocumentAsync } from "expo-document-picker";
 import { Query, requestPermissionsAsync } from "expo-media-library";
 import { StatusBar } from "expo-status-bar";
-import { Alert, Animated, Easing, FlatList, Keyboard, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Animated, Easing, FlatList, Image,  Keyboard, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import Slider from "@react-native-community/slider";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
@@ -51,6 +51,31 @@ function formatTime(seconds) {
 
   return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
 }
+
+const getOriginalFileName = (song) => {
+  if (song.originalName) {
+    return song.originalName.trim().toLowerCase();
+  }
+
+  const uriFileName = song.uri?.split('/').pop();
+
+  if ( uriFileName) {
+    let decodedFileName = uriFileName;
+
+    try {
+      decodedFileName = decodeURIComponent(uriFileName);
+    } catch (error) {
+      console.log('No se pudo decodificar el nombre del archivo.');
+    }
+
+    return decodedFileName
+      .replace(/^\d+-/, '')
+      .trim()
+      .toLowerCase();
+  }
+
+  return String(song.name || '').trim().toLowerCase();
+};
 
 export default function App() {
   const player = useAudioPlayer(require("./assets/audio/01 Mestizo.mp3"));
@@ -110,6 +135,8 @@ export default function App() {
   const [songs, setSongs] = useState([]);
   const [favoriteSongIds, setFavoriteSongIds] = useState([]);
   const [selectedLibrary, setSelectedLibrary] = useState('all');
+  const [selectedLibraryView, setSelectedLibraryView] = useState('songs'); 
+  const [selectedAlbum, setSelectedAlbum] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchVisible, setSearchVisible] = useState(false);
   const [sortOrder, setSortOrder] = useState('asc');
@@ -136,6 +163,59 @@ export default function App() {
     });
 
   const currentSong = songs.find((song) => song.id === currentSongId);
+  
+  const albums = Object.values(
+    songs.reduce((groups, song) => {
+      const rawAlbum = String(song.album || '').trim();
+
+      const albumName = 
+        !rawAlbum || rawAlbum.toLowerCase() === 'album desconocido'
+          ? 'Sin álbum'
+          : rawAlbum;
+      
+      const artistName = 
+        String(song.artist || '').trim() || 'Artista desconocido';
+
+      const albumId = 
+        `${artistName.toLowerCase()}::${albumName.toLowerCase()}`;
+
+      if (!groups[albumId]) {
+        groups[albumId] = {
+          id: albumId,
+          name: albumName,
+          artist: artistName,
+          artwork: song.artwork || null,
+          songs: [],
+        };
+      }
+
+      groups[albumId].songs.push(song);
+
+      if (!groups[albumId].artwork && song.artwork) {
+        groups[albumId].artwork = song.artwork;
+      }
+
+      return groups;
+    }, {})
+  );
+
+  const displayedAlbums = albums
+    .filter((album) => 
+      `${album.name} ${album.artist}`
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase())
+    )
+
+    .sort((a, b) => {
+      const comparison = a.name.localeCompare(
+        b.name,
+        'es',
+        { sensitivity: 'base' }
+      );
+
+      return sortOrder === 'asc' ? comparison : -comparison;
+    });
+
   const [importMenuVisible, setImportMenuVisible] = useState(false);
   const [repeatEnabled, setRepeatEnabled] = useState(false);
 
@@ -284,21 +364,27 @@ export default function App() {
     }
 
     const foundSongs = await Promise.all(
-      assets.map(async (asset) => ({
-        id: asset.id,
-        name: await asset.getFilename(),
-        uri: await asset.getUri(),
-      }))
+      assets.map(async (asset) => {
+        const fileName = await asset.getFilename();
+
+        return {
+          id: asset.id,
+          name: fileName,
+          originalName: fileName,
+          uri: await asset.getUri(),
+        };
+      })
     );
 
     const existingNames = new Set(
-      songs.map((song) => song.name.trim().toLowerCase())
+      songs.map((song) => getOriginalFileName(song))
     );
 
     const newSongs = foundSongs.filter((song) => {
-      const normalizedName = song.name.trim().toLowerCase();
+      const normalizedName = song.originalName.trim().toLowerCase();
 
       if (existingNames.has(normalizedName)) {
+        console.log('Canción duplicada, se omite:', song.originalName);
         return false;
       }
 
@@ -309,12 +395,16 @@ export default function App() {
     const updatedSongs = [...songs, ...newSongs];
 
     setSongs(updatedSongs);
-    await saveLibrary(updatedSongs);
 
-    console.log('Biblioteca actualizada:', updatedSongs.length, 'canciones');
-   } catch (error) {
-    console.log('Error al buscar canciones:', error);
-   }
+    const saved = saveLibrary(updatedSongs);
+
+    console.log('Canciones nuevas encontradas:', newSongs.length);
+    console.log('Biblioteca actualizada:', updatedSongs.length);
+    console.log('Guardado correcto:', saved);
+   
+    } catch (error) {
+      console.log('Error al buscar canciones:', error);
+    }
   };
 
   const pickSong = async () => {
@@ -324,7 +414,8 @@ export default function App() {
         copyToCacheDirectory: true,
         multiple: true,
       });
-      console.log('Resultado del selector:', result.canceled
+      console.log('Resultado del selector:',
+         result.canceled
         ? 'Importación cancelada'
         : `${result.assets.length} archivo(s) seleccionado(s)`);
 
@@ -333,7 +424,7 @@ export default function App() {
     }
 
     const existingNames = new Set(
-      songs.map((song) => song.name.trim().toLowerCase())
+      songs.map((song) => getOriginalFileName(song))
     );
 
     const newSongs = [];
@@ -342,6 +433,7 @@ export default function App() {
       const normalizedName = song.name.trim().toLowerCase();
 
       if (existingNames.has(normalizedName)) {
+        console.log('Canción duplicada, se omite:', song.name);
         continue;
       }
 
@@ -351,6 +443,7 @@ export default function App() {
 
       await sourceFile.copy(destinationFile);
       console.log('Archivo copiado:', destinationFile.uri);
+      
       const audioData = await getAudioMetadata(destinationFile.uri, [
         'name',
         'artist',
@@ -361,6 +454,7 @@ export default function App() {
       const importedSongs = {
         id: destinationFile.uri,
         name: audioData.metadata.name || song.name,
+        originalName: song.name,
         uri: destinationFile.uri,
         artist: audioData.metadata.artist || 'Artista desconocido',
         album: audioData.metadata.album || 'Album desconocido',
@@ -571,7 +665,45 @@ export default function App() {
         <Text style={styles.subtitle}>Tu música, a tu manera.</Text>
       </View>
 
-      <View style={styles.player}>
+      {selectedLibraryView === 'albums' && (
+        <View style={styles.miniPlayer}>
+          <View style={styles.miniPlayerInfo}>
+            <Text style={styles.miniPlayerTitle} numberOfLines={1}>
+              {currentSong?.name || songTitle || 'Candy Music'}
+            </Text>
+
+            <Text style={styles.miniPlayerArtist} numberOfLines={1}>
+              {currentSong?.artist || 'Tu música, a tu manera'}
+            </Text>
+          </View>
+
+          <Pressable
+            style={styles.miniPlayerButton}
+            onPress={() => {
+              if (status.playing) {
+                player.pause();
+              } else {
+                player.play();
+              }
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={
+              status.playing ? 'Pausar canción' : 'Reproducir canción'
+            }
+          >
+            <Text style={styles.miniPlayerButtonText}>
+              {status.playing ? '⏸' : '▶'}
+            </Text>
+          </Pressable>
+        </View>    
+      )}
+
+      <View 
+        style={[
+          styles.player,
+          selectedLibraryView === 'albums' && styles.playerHidden,
+        ]}
+      >
         <View style={styles.artworkContainer}>
           {currentSong?.artwork ? (
             <Animated.Image
@@ -757,36 +889,52 @@ export default function App() {
           <Pressable
             style={[
               styles.libraryTab,
-              selectedLibrary === 'all' && styles.libraryTabActive,
+              selectedLibraryView === 'songs' &&
+                selectedLibrary === 'all' &&
+                styles.libraryTabActive,
             ]}
-            onPress={() => setSelectedLibrary('all')}
+            onPress={() => {
+              setSelectedLibraryView('songs');
+              setSelectedLibrary('all');
+            }}
           >
-            <Text
-              style={[
-                styles.libraryTabText,
-                selectedLibrary === 'all' && styles.libraryTabTextActive,
-              ]}
-            >
-              Mi biblioteca
+            <Text style={styles.libraryTabText}>
+              ♫ Biblioteca
             </Text>
           </Pressable>
 
           <Pressable
             style={[
               styles.libraryTab,
-              selectedLibrary === 'favorites' && styles.libraryTabActive,
+              selectedLibraryView === 'albums' &&
+               styles.libraryTabActive,
             ]}
-            onPress={() => setSelectedLibrary('favorites')}
+            onPress={() => {
+              setSelectedLibraryView('albums');
+              setSelectedLibrary('all');
+            }}  
           >
-            <Text
-              style={[
-                styles.libraryTabText,
-                selectedLibrary === 'favorites' && styles.libraryTabTextActive,
-              ]}
-            >
-              ♥ Mis favoritos
+            <Text style={styles.libraryTabText}>
+              ◉ Álbumes
             </Text>
           </Pressable>
+
+          <Pressable
+            style={[
+              styles.libraryTab,
+              selectedLibraryView === 'songs' &&
+                selectedLibrary === 'favorites' &&
+                styles.libraryTabActive,
+            ]}
+            onPress={() => {
+              setSelectedLibraryView('songs');
+              setSelectedLibrary('favorites');
+            }}
+          >
+            <Text style={styles.libraryTabText}>
+              ♥ Favoritos
+            </Text>
+          </Pressable>  
         </View>
 
         <View style={styles.libraryHeader}>
@@ -852,11 +1000,48 @@ export default function App() {
 
           <FlatList
             style={{ flex: 1 }}
-            data={displayedSongs}
+            data={
+              selectedLibraryView === 'albums' && selectedLibrary === 'all'
+                ? displayedAlbums
+                : displayedSongs
+            }
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => {
+              if (selectedLibraryView === 'albums' && selectedLibrary === 'all') {
+                return (
+                  <View style={styles.albumRow}>
+                    {item.artwork ? (
+                      <Image
+                        source={{ uri: item.artwork }}
+                        style={styles.albumArtwork}
+                        resizeMode="cover"
+                      />  
+                    ) : (
+                      <View style={styles.albumArtworkFallback}>
+                        <Text style={styles.albumArtworkNote}>♫</Text>
+                      </View>  
+                    )}
+
+                    <View style={styles.albumInfo}>
+                      <Text style={styles.albumName} numberOfLines={1}>
+                        {item.name}
+                      </Text>
+
+                      <Text style={styles.albumArtist} numberOfLines={1}>
+                        {item.artist}
+                      </Text>
+
+                      <Text style={styles.albumSongCount}>
+                        {item.songs.length}{' '}
+                        {item.songs.length === 1 ? 'canción' : 'canciones'}
+                      </Text>
+                    </View>
+                  </View>  
+                );
+              }
+
               const isCurrentSong = item.id === currentSongId;
 
               return (
@@ -904,7 +1089,9 @@ export default function App() {
 
             ListEmptyComponent={
               <Text style={styles.emptyText}>
-                {selectedLibrary === 'favorites'
+                {selectedLibraryView === 'albums' && selectedLibrary === 'all'
+                  ? 'Todavía no tienes álbumes para mostrar.'
+                  : selectedLibrary === 'favorites'
                   ? 'Todavía no tienes canciones favoritas.'
                   : 'Importa tus canciones para verlas aquí.'}
               </Text>
@@ -953,6 +1140,50 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#393653',
+  },
+  playerHidden: {
+    display: 'none',
+  },
+  miniPlayer: {
+    width: '100%',
+    minHeight: 66,
+    backgroundColor: '#1C1C2E',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#393653',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  miniPlayerInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  miniPlayerTitle: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  miniPlayerArtist: {
+    color: '#B9B9CC',
+    fontSize: 12, 
+    marginTop: 4,
+  },
+  miniPlayerButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#A78BFA',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  miniPlayerButtonText: {
+    color: '#21152F',
+    fontSize: 20,
+    fontWeight: 'bold',
   },
   importMenu: {
     width: '90%',
@@ -1066,6 +1297,52 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderBottomWidth: 1,
     borderBottomColor: '#302D46',
+  },
+  albumRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#302D46',
+  },
+  albumArtwork: {
+    width: 64,
+    height: 64,
+    borderRadius: 10,
+    backgroundColor: '#29243B',
+  },
+  albumArtworkFallback: {
+    width: 64,
+    height: 64,
+    borderRadius: 10,
+    backgroundColor: '#302448',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  albumArtworkNote: {
+    color: '#A78BFA',
+    fontSize: 28,
+  },
+  albumInfo: {
+    flex: 1,
+    marginLeft: 12,
+    justifyContent: 'center',
+  },
+  albumName: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: 'bold',
+  },
+  albumArtist: {
+    color: '#C4B5FD',
+    fontSize: 13,
+    marginTop: 4,
+  },
+  albumSongCount: {
+    color: '#85859D',
+    fontSize: 11,
+    marginTop: 4,
   },
   removeSongButton: {
     paddingHorizontal: 16,
