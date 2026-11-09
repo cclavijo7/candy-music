@@ -265,25 +265,32 @@ export default function App() {
 
   const clearLibrary = () => {
   try {
-    const saved = saveLibrary([]);
+    const librarySaved = saveLibrary([]);
+    const favoritesSaved = saveFavorites([]);
 
-    if (!saved) {
-      console.log('No se pudo vaciar la biblioteca guardada.');
+    if (!librarySaved || !favoritesSaved) {
+      const libraryRestored = saveLibrary(songs);
+      const favoriteRestored = saveFavorites(favoriteSongIds);
+
+      console.log('Biblioteca restaurada:', libraryRestored);
+      console.log('Favoritos restaurados:', favoriteRestored);
+      
+      Alert.alert(
+        'Error',
+        'No se pudo vaciar la biblioteca. Tus datos originales se han intentado restaurar.'
+      );
+
       return;
     }
 
-    const favoritesSaved = saveFavorites([]);
-
-    if (!favoritesSaved) {
-      console.log('No se pudieron guardar los favoritos vacios.');
-    }
-
     player.pause();
+    
     setSongs([]);
     setFavoriteSongIds([]);
     setSongTitle(null);
     setCurrentSongId(null);
     setSliderPosition(null);
+    setSelectedAlbum(null);
 
     console.log('Biblioteca vaciada correctamente.');
     console.log('Archivos de audio conservados.');
@@ -575,6 +582,19 @@ export default function App() {
     setImportMenuVisible(true);
   };
 
+  const openAlbum = (album) => {
+    setSelectedAlbum(album);
+    setSearchQuery('');
+    setSearchVisible(false);
+    Keyboard.dismiss();
+  };
+
+  const closeAlbum = () => {
+    setSelectedAlbum(null);
+    setSearchQuery('');
+    setSearchVisible(false);
+  };
+
   const toggleFavorite = (songId) => {
     const updatedFavorites = favoriteSongIds.includes(songId)
     ? favoriteSongIds.filter((id) => id !== songId)
@@ -680,12 +700,17 @@ export default function App() {
           <Pressable
             style={styles.miniPlayerButton}
             onPress={() => {
+              if (!currentSongId) {
+                return;
+              } 
+
               if (status.playing) {
                 player.pause();
               } else {
                 player.play();
               }
             }}
+            disabled={!currentSongId}
             accessibilityRole="button"
             accessibilityLabel={
               status.playing ? 'Pausar canción' : 'Reproducir canción'
@@ -894,11 +919,19 @@ export default function App() {
                 styles.libraryTabActive,
             ]}
             onPress={() => {
+              setSelectedAlbum(null);
               setSelectedLibraryView('songs');
               setSelectedLibrary('all');
             }}
           >
-            <Text style={styles.libraryTabText}>
+            <Text 
+              style={[
+                styles.libraryTabText,
+                selectedLibraryView === 'songs' &&
+                  selectedLibrary === 'all' &&
+                  styles.libraryTabTextActive,
+              ]}
+            >      
               ♫ Biblioteca
             </Text>
           </Pressable>
@@ -910,11 +943,18 @@ export default function App() {
                styles.libraryTabActive,
             ]}
             onPress={() => {
+              setSelectedAlbum(null);
               setSelectedLibraryView('albums');
               setSelectedLibrary('all');
             }}  
           >
-            <Text style={styles.libraryTabText}>
+            <Text 
+              style={[
+                styles.libraryTabText,
+                selectedLibraryView === 'albums' &&
+                  styles.libraryTabTextActive,
+              ]}
+            >      
               ◉ Álbumes
             </Text>
           </Pressable>
@@ -927,11 +967,19 @@ export default function App() {
                 styles.libraryTabActive,
             ]}
             onPress={() => {
+              setSelectedAlbum(null);
               setSelectedLibraryView('songs');
               setSelectedLibrary('favorites');
             }}
           >
-            <Text style={styles.libraryTabText}>
+            <Text 
+              style={[
+                styles.libraryTabText,
+                selectedLibraryView === 'songs' &&
+                  selectedLibrary === 'favorites' &&
+                  styles.libraryTabTextActive,
+              ]}
+            >
               ♥ Favoritos
             </Text>
           </Pressable>  
@@ -939,7 +987,11 @@ export default function App() {
 
         <View style={styles.libraryHeader}>
           <Text style={styles.libraryTitle}>
-            {selectedLibrary === 'favorites' ? 'Mis favoritos' : 'Mi biblioteca'}
+            {selectedLibraryView === 'albums'
+             ? 'Álbumes'
+             : selectedLibrary === 'favorites'
+                ? 'Mis favoritos'
+                : 'Mi biblioteca'}
           </Text>
 
           <Pressable
@@ -997,107 +1049,235 @@ export default function App() {
             autoCorrect={false}
           />  
         )}
-
-          <FlatList
-            style={{ flex: 1 }}
-            data={
-              selectedLibraryView === 'albums' && selectedLibrary === 'all'
-                ? displayedAlbums
-                : displayedSongs
-            }
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="on-drag"
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => {
-              if (selectedLibraryView === 'albums' && selectedLibrary === 'all') {
-                return (
-                  <View style={styles.albumRow}>
-                    {item.artwork ? (
-                      <Image
-                        source={{ uri: item.artwork }}
-                        style={styles.albumArtwork}
-                        resizeMode="cover"
-                      />  
-                    ) : (
-                      <View style={styles.albumArtworkFallback}>
-                        <Text style={styles.albumArtworkNote}>♫</Text>
-                      </View>  
-                    )}
-
-                    <View style={styles.albumInfo}>
-                      <Text style={styles.albumName} numberOfLines={1}>
-                        {item.name}
-                      </Text>
-
-                      <Text style={styles.albumArtist} numberOfLines={1}>
-                        {item.artist}
-                      </Text>
-
-                      <Text style={styles.albumSongCount}>
-                        {item.songs.length}{' '}
-                        {item.songs.length === 1 ? 'canción' : 'canciones'}
-                      </Text>
-                    </View>
-                  </View>  
-                );
-              }
-
-              const isCurrentSong = item.id === currentSongId;
-
-              return (
-                <View style={styles.songRow}>
-                  <Pressable
-                    style={[
-                      styles.songItem,
-                      isCurrentSong && styles.songItemActive,
-                      { flex: 1 },
-                    ]}
-                    onPress={() => playSong(item)}
-                  >
-                    <Text
-                      style={[
-                        styles.songItemText,
-                        isCurrentSong && styles.songItemTextActive,
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {isCurrentSong ? '♫' : '♪'} {item.name}
-                    </Text>
-                  </Pressable>
-
-                  <Pressable
-                    style={styles.removeSongButton}
-                    onPress={() => {
-                      if (selectedLibrary === 'favorites') {
-                        toggleFavorite(item.id);
-                      } else {
-                        removeSongFromLibrary(item);
-                      }
-                    }}
-                    accessibilityRole="button"
-                    accessibilityLabel={
-                      selectedLibrary === 'favorites'
-                      ? 'Quitar de favoritos'
-                      : 'Quitar de la biblioteca'
-                    }
-                  >
-                    <Text style={styles.removeSongButtonText}>✕</Text>
-                  </Pressable>  
-                </View>
-              ); 
-            }}
-
-            ListEmptyComponent={
-              <Text style={styles.emptyText}>
-                {selectedLibraryView === 'albums' && selectedLibrary === 'all'
-                  ? 'Todavía no tienes álbumes para mostrar.'
-                  : selectedLibrary === 'favorites'
-                  ? 'Todavía no tienes canciones favoritas.'
-                  : 'Importa tus canciones para verlas aquí.'}
+         {selectedAlbum ? (
+            <View style={{ flex: 1, width: '100%' }}>
+              {/* Boton para regresar */}
+              <Pressable
+                onPress={closeAlbum}
+                style={{
+                  paddingVertical: 12,
+                  marginBottom: 12,
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Regresar a los álbumes"
+             >
+              <Text 
+                style={{ 
+                color: '#A78BFA', 
+                fontSize: 16, 
+                fontWeight: '600' }}
+              >
+                ← Volver a los álbumes
               </Text>
-            }
+             </Pressable>
+
+             {/* Información del álbum */}
+             <View style={{ alignItems: 'center', marginBottom: 24 }}>
+              {selectedAlbum.artwork ? (
+                <Image
+                  source={{ uri: selectedAlbum.artwork }}
+                  style={{
+                    width: 190,
+                    height: 190,
+                    borderRadius: 12,
+                    marginBottom: 18,
+                  }}
+                  resizeMode="cover"
+                />
+                ) : (
+                  <View 
+                    style={{
+                      width: 190,
+                      height: 190,
+                      borderRadius: 12,
+                      backgroundColor: '#1C1C2E',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      marginBottom: 18,
+                    }}
+                  >
+                    <Text style={{ color: '#A78BFA', fontSize: 64 }}>
+                      ♫
+                    </Text>
+                  </View>     
+                )}
+
+                <Text
+                  style={{
+                    color: '#FFFFFF',
+                    fontSize: 22,
+                    fontWeight: '700',
+                    textAlign: 'center',
+                  }}
+                >
+                  {selectedAlbum.name}
+                </Text>
+
+                <Text 
+                  style={{
+                    color: '#A78BFA',
+                    fontSize: 15,
+                    marginTop: 6,
+                    textAlign: 'center',
+                  }}
+                >
+                  {selectedAlbum.artist}
+                </Text>
+
+                <Text
+                  style={{
+                    color: '#85859D',
+                    fontSize: 13,
+                    marginTop: 8,
+                  }}
+                >
+                  {selectedAlbum.songs.length}{' '}
+                  {selectedAlbum.songs.length === 1 ? 'canción' : 'canciones'}
+                </Text>  
+              </View>
+
+              {/* Lista de canciones del album */}
+              <FlatList
+                data={selectedAlbum.songs}
+                keyExtractor={(song) => song.id}
+                keyboardShouldPersistTaps="handled"
+                renderItem={({ item }) => {
+                  const isCurrentSong = item.id === currentSongId;
+
+                  return (
+                    <Pressable
+                      style={[
+                        styles.songItem,
+                        isCurrentSong && styles.songItemActive,
+                        { marginBottom: 8},
+                      ]}
+                      onPress={() => playSong(item)}
+                    >
+                      <Text
+                        style={[
+                          styles.songItemText,
+                          isCurrentSong && styles.songItemTextActive,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {isCurrentSong ? '♫' : '♪'} {item.name} 
+                      </Text>  
+                    </Pressable>  
+                  );
+                }}
+                ListEmptyComponent={
+                  <Text style={styles.emptyText}>
+                    Este álbum todavía no tiene canciones.
+                  </Text>
+                }
+              />
+            </View>
+          ) : (
+            <FlatList
+              style={{ flex: 1 }}
+              data={
+                selectedLibraryView === 'albums' && selectedLibrary === 'all'
+                  ? displayedAlbums
+                  : displayedSongs 
+              }
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => {
+                if (selectedLibraryView === 'albums' && selectedLibrary === 'all') {
+                  return (
+                    <Pressable
+                      style={styles.albumRow}
+                      onPress={() => openAlbum(item)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Abrir álbum ${item.name}`}
+                    >
+                      {item.artwork ? (
+                        <Image
+                          source={{ uri: item.artwork }}
+                          style={styles.albumArtwork}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View style={styles.albumArtworkFallback}>
+                          <Text style={styles.albumArtworkNote}>♫</Text>
+                        </View>
+                      )}  
+
+                        <View style={styles.albumInfo}>
+                          <Text style={styles.albumName} numberOfLines={1}>
+                            {item.name}
+                          </Text>
+
+                          <Text style={styles.albumArtist} numberOfLines={1}>
+                            {item.artist}
+                          </Text> 
+
+                          <Text style={styles.albumSongCount}>
+                            {item.songs.length}{' '}
+                            {item.songs.length === 1 ? 'canción' : 'canciones '}
+                          </Text>
+                        </View>    
+                    </Pressable>    
+                  );
+                }
+
+                const isCurrentSong = item.id === currentSongId;
+
+                return (
+                  <View style={styles.songRow}>
+                    <Pressable
+                      style={[
+                        styles.songItem,
+                        isCurrentSong && styles.songItemActive,
+                        { flex: 1 },
+                      ]}
+                      onPress={() => playSong(item)}
+                    >
+                      <Text
+                        style={[
+                          styles.songItemText,
+                          isCurrentSong && styles.songItemTextActive,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {isCurrentSong ? '♫' : '♪'} {item.name}
+                      </Text>    
+                    </Pressable>
+
+                    <Pressable
+                      style={styles.removeSongButton}
+                      onPress={() => {
+                        if (selectedLibrary === 'favorites') {
+                          toggleFavorite(item.id);
+                        }  else {
+                          removeSongFromLibrary(item);
+                        }
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel={
+                        selectedLibrary === 'favorites'
+                        ? 'Quitar de favoritos'
+                        : 'Quitar de la biblioteca'
+                      }
+                    >
+                      <Text style={styles.removeSongButtonText}>X</Text>
+                    </Pressable>
+                  </View>      
+                );
+              }}
+              ListEmptyComponent={
+                <Text style={styles.emptyText}>
+                  {selectedLibraryView === 'albums' 
+                    ? 'Todavía no tienes álbumes para mostrar.'
+                    : selectedLibrary === 'favorites'
+                      ? 'Todavía no tienes canciones favoritas.'
+                      : 'Importa tus canciones para verlas aquí.'}
+                </Text>
+              }
             />
-        </View>
+          )}  
+          </View>  
 
         <Text style={styles.footer}> TU MÚSICA. TU MOMENTO</Text>
       </KeyboardAvoidingView>  
