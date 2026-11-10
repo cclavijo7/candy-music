@@ -137,6 +137,7 @@ export default function App() {
   const [selectedLibrary, setSelectedLibrary] = useState('all');
   const [selectedLibraryView, setSelectedLibraryView] = useState('songs'); 
   const [selectedAlbum, setSelectedAlbum] = useState(null);
+  const [albumSource, setAlbumSource] = useState('albums');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchVisible, setSearchVisible] = useState(false);
   const [sortOrder, setSortOrder] = useState('asc');
@@ -215,6 +216,37 @@ export default function App() {
 
       return sortOrder === 'asc' ? comparison : -comparison;
     });
+
+    const favoriteAlbums = albums
+      .map((album) => {
+        const favoriteSongsInAlbum = album.songs.filter((song) =>
+          favoriteSongIds.includes(song.id)
+        );
+
+        return {
+          ...album,
+          songs: favoriteSongsInAlbum,
+        };
+      })
+      .filter((album) => album.songs.length > 0);
+
+    const displayedFavoriteAlbums = favoriteAlbums
+      .filter((album) =>
+        `${album.name} ${album.artist} ${album.songs
+          .map((song) => song.name)
+          .join(' ')}`
+          .toLowerCase()
+          .includes(searchQuery.toLowerCase())
+      )
+      .sort((a, b) => {
+        const comparison = a.name.localeCompare(
+          b.name,
+          'es',
+          { sensitivity: 'base' }
+        );
+
+        return sortOrder === 'asc' ? comparison : -comparison;
+      });  
 
   const [importMenuVisible, setImportMenuVisible] = useState(false);
   const [repeatEnabled, setRepeatEnabled] = useState(false);
@@ -583,6 +615,10 @@ export default function App() {
   };
 
   const openAlbum = (album) => {
+    setAlbumSource(
+      selectedLibrary === 'favorites' ? 'favorites' : 'albums'
+    );
+
     setSelectedAlbum(album);
     setSearchQuery('');
     setSearchVisible(false);
@@ -685,7 +721,7 @@ export default function App() {
         <Text style={styles.subtitle}>Tu música, a tu manera.</Text>
       </View>
 
-      {selectedLibraryView === 'albums' && (
+      {(selectedLibraryView === 'albums' || selectedAlbum) && (
         <View style={styles.miniPlayer}>
           <View style={styles.miniPlayerInfo}>
             <Text style={styles.miniPlayerTitle} numberOfLines={1}>
@@ -726,7 +762,8 @@ export default function App() {
       <View 
         style={[
           styles.player,
-          selectedLibraryView === 'albums' && styles.playerHidden,
+          (selectedLibraryView === 'albums' || selectedAlbum) && 
+            styles.playerHidden,
         ]}
       >
         <View style={styles.artworkContainer}>
@@ -1041,7 +1078,12 @@ export default function App() {
         {searchVisible && (  
           <TextInput
             style={styles.searchInput}
-            placeholder="Buscar una canción..."
+            placeholder={
+              selectedLibraryView === 'albums' ||
+              selectedLibrary === 'favorites'
+                ? 'Buscar álbum, artista o canción...'
+                : 'Buscar una canción...'
+            }    
             placeholderTextColor='#85859D'
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -1059,15 +1101,22 @@ export default function App() {
                   marginBottom: 12,
                 }}
                 accessibilityRole="button"
-                accessibilityLabel="Regresar a los álbumes"
+                accessibilityLabel={
+                  albumSource === 'favorites'
+                    ? "Regresar a favoritos"
+                    : 'Regresar a los álbumes'
+                }    
              >
               <Text 
                 style={{ 
-                color: '#A78BFA', 
-                fontSize: 16, 
-                fontWeight: '600' }}
+                  color: '#A78BFA', 
+                  fontSize: 16, 
+                  fontWeight: '600' 
+                }}
               >
-                ← Volver a los álbumes
+                {albumSource === 'favorites'
+                  ? '← Volver a favoritos'
+                  : '← Volver a los álbumes'}
               </Text>
              </Pressable>
 
@@ -1132,7 +1181,13 @@ export default function App() {
                   }}
                 >
                   {selectedAlbum.songs.length}{' '}
-                  {selectedAlbum.songs.length === 1 ? 'canción' : 'canciones'}
+                  {albumSource === 'favorites'
+                    ? selectedAlbum.songs.length === 1 
+                      ? 'favorita'
+                      : 'favoritas'
+                    : selectedAlbum.songs.length === 1
+                      ? 'canción' 
+                      : 'canciones'}
                 </Text>  
               </View>
 
@@ -1178,13 +1233,18 @@ export default function App() {
               data={
                 selectedLibraryView === 'albums' && selectedLibrary === 'all'
                   ? displayedAlbums
-                  : displayedSongs 
+                  : selectedLibrary === 'favorites'
+                    ? displayedFavoriteAlbums
+                    : displayedSongs 
               }
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="on-drag"
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => {
-                if (selectedLibraryView === 'albums' && selectedLibrary === 'all') {
+                if (
+                  (selectedLibraryView === 'albums' && selectedLibrary === 'all') ||
+                  selectedLibrary === 'favorites'
+                 ) {
                   return (
                     <Pressable
                       style={styles.albumRow}
@@ -1215,7 +1275,13 @@ export default function App() {
 
                           <Text style={styles.albumSongCount}>
                             {item.songs.length}{' '}
-                            {item.songs.length === 1 ? 'canción' : 'canciones '}
+                            {item.songs.length === 1 
+                              ? selectedLibrary === 'favorites'
+                                ? 'favorita'
+                                : 'canción'
+                              : selectedLibrary === 'favorites'
+                                ? 'favoritas'
+                                : 'canciones '}
                           </Text>
                         </View>    
                     </Pressable>    
@@ -1271,7 +1337,7 @@ export default function App() {
                   {selectedLibraryView === 'albums' 
                     ? 'Todavía no tienes álbumes para mostrar.'
                     : selectedLibrary === 'favorites'
-                      ? 'Todavía no tienes canciones favoritas.'
+                      ? 'Todavía no tienes álbumes favoritas.'
                       : 'Importa tus canciones para verlas aquí.'}
                 </Text>
               }
