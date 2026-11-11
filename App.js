@@ -801,6 +801,75 @@ export default function App() {
     );
   };
 
+  const removeAlbumFromLibrary = (album) => {
+    Alert.alert(
+      'Eliminar álbum',
+      `¿Quieres eliminar "${album.name}" de tu biblioteca y de tus favoritos? Las canciones originales permanecerán en tu teléfono.`,
+      [
+        {
+          text: 'Cancelar',
+          style: 'cancel',
+        },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: () => {
+            const albumSongIds = album.songs.map((song) => song.id);
+            const albumSongIdsSet = new Set(albumSongIds);
+
+            const updatedSongs = songs.filter(
+              (song) => !albumSongIdsSet.has(song.id)
+            );
+
+            const updatedFavorites = favoriteSongIds.filter(
+              (songId) => !albumSongIdsSet.has(songId)
+            );
+
+            const librarySaved = saveLibrary(updatedSongs);
+            const favoritesSaved = saveFavorites(updatedFavorites);
+
+            if (!librarySaved || !favoritesSaved) {
+              const libraryRestored = saveLibrary(songs);
+              const favoriteRestored = saveFavorites(favoriteSongIds);
+
+              console.log('Biblioteca restaurada:', libraryRestored);
+              console.log('Favoritos restaurados:', favoriteRestored);
+
+              Alert.alert(
+                'Error',
+                'No se pudo eliminar el álbum. Tu biblioteca se ha conservado.'
+              );
+              return;
+            }
+
+            setSongs(updatedSongs);
+            setFavoriteSongIds(updatedFavorites);
+
+            playbackQueue.current = playbackQueue.current.filter(
+              (song) => !albumSongIdsSet.has(song.id)
+            );
+
+            if (albumSongIdsSet.has(currentSongId)) {
+              player.pause();
+              setCurrentSongId(null);
+              setSongTitle(null);
+              setSliderPosition(null);
+            }
+
+            if (selectedAlbum?.id === album.id) {
+              setSelectedAlbum(null);
+              setAlbumSource('albums');
+            }
+
+            console.log(
+              `Álbum eliminado: ${album.name}. Archivo de audio conservado.`
+            );
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <SafeAreaProvider>
       <SafeAreaView
@@ -1324,6 +1393,34 @@ export default function App() {
                       : 'canciones'}
                 </Text>  
               </View>
+
+              {/* Botón para eliminar el álbum completo */}
+              {albumSource === 'albums' && (
+                <Pressable
+                  onPress={() => removeAlbumFromLibrary(selectedAlbum)}
+                  style={{
+                    backgroundColor: '#302448',
+                    borderWidth: 1,
+                    borderColor: '#A78BFA',
+                    borderRadius: 12,
+                    paddingVertical: 12,
+                    alignItems: 'center',
+                    marginBottom: 16,
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Eliminar álbum completo"
+                >
+                  <Text 
+                    style={{
+                      color: '#E9DFFF',
+                      fontSize: 14,
+                      fontWeight: '600',
+                    }}
+                  >
+                    🗑 Eliminar álbum completo
+                  </Text>  
+                </Pressable>  
+              )}
 
               {/* Lista de canciones del album */}
               <FlatList
