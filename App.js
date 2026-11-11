@@ -81,6 +81,8 @@ export default function App() {
   const player = useAudioPlayer(require("./assets/audio/01 Mestizo.mp3"));
   const status = useAudioPlayerStatus(player);
   const finishHandled = useRef(false);
+  const playbackQueue = useRef([]);
+  const playbackQueueSource = useRef('all');
   const artworkScale = useRef(new Animated.Value(1)).current;
   useEffect(() => {
     if (!status.playing) {
@@ -316,6 +318,14 @@ export default function App() {
     }
 
     player.pause();
+
+    playbackQueue.current = [];
+    playbackQueueSource.current = 'all';
+
+    pendingAutoPlay.current = false;
+    waitingForLoad.current = false;
+    waitingForUnload.current = false;
+    finishHandled.current = false;
     
     setSongs([]);
     setFavoriteSongIds([]);
@@ -517,6 +527,9 @@ export default function App() {
     const firstSong = newSongs[0];
 
     if (firstSong) {
+        playbackQueue.current = updatedSongs;
+        playbackQueueSource.current = 'all';
+
         player.replace({ uri: firstSong.uri });
         setSongTitle(firstSong.name);
         setCurrentSongId(firstSong.id);
@@ -528,8 +541,19 @@ export default function App() {
     }
   };
 
-  const playSong = (song, autoPlay = true) => {
+  const playSong = (
+    song, 
+    autoPlay = true, 
+    queue = songs,
+    queueSource = playbackQueueSource.current
+  ) => {
+    playbackQueue.current = queue.length > 0 ? queue : [song];
+    playbackQueueSource.current = queueSource;
+    
     console.log('Cancion seleccionada:', song.name, song.uri);
+    console.log('Cola de reproducción:', playbackQueue.current.length);
+    console.log('Origen de la cola:', playbackQueueSource.current);
+
     player.replace({ uri: song.uri });
     setSongTitle(song.name);
     setCurrentSongId(song.id);
@@ -547,37 +571,51 @@ export default function App() {
   };
 
   const playNextSong = () => {
-    if (songs.length === 0) {
+    const queue = playbackQueue.current;
+
+    if (queue.length === 0) {
       return;
     }
 
-    const currentIndex = songs.findIndex(
+    const currentIndex = queue.findIndex(
       (song) => song.id === currentSongId
     );
 
     const nextIndex =
-      currentIndex === -1 || currentIndex === songs.length - 1
+      currentIndex === -1 || currentIndex === queue.length - 1
       ? 0
       : currentIndex + 1;
 
-    playSong(songs[nextIndex]);
+    playSong(
+      queue[nextIndex], 
+      true, 
+      queue,
+      playbackQueueSource.current
+    );
   };
 
   const playPreviousSong = () => {
-    if (songs.length === 0) {
+    const queue = playbackQueue.current;
+
+    if (queue.length === 0) {
       return;
     }
 
-    const currentIndex = songs.findIndex(
+    const currentIndex = queue.findIndex(
       (song) => song.id === currentSongId
     );
 
     const previousIndex =
-      currentIndex <= 0
-      ? songs.length - 1
+      currentIndex === -1 || currentIndex === 0
+      ? queue.length - 1
       : currentIndex - 1;
 
-    playSong(songs[previousIndex]);
+    playSong(
+      queue[previousIndex],
+      true, 
+      queue,
+      playbackQueueSource.current
+    );
   };
 
   useEffect(() => {
@@ -592,23 +630,34 @@ export default function App() {
 
     finishHandled.current = true;
 
-    if (repeatEnabled || songs.length <= 1) {
+    if (repeatEnabled) {
       return;
     }
 
-    const currentIndex = songs.findIndex(
+    const queue = playbackQueue.current;
+
+    if (queue.length <= 1) {
+      return;
+    }
+
+    const currentIndex = queue.findIndex(
       (song) => song.id === currentSongId
     );
 
     if (currentIndex !== -1) {
       const nextIndex =
-        currentIndex === songs.length - 1
+        currentIndex === queue.length - 1
           ? 0
           : currentIndex + 1;
 
-      playSong(songs[nextIndex], false);
+      playSong(
+        queue[nextIndex],
+        false,
+        queue,
+        playbackQueueSource.current
+      );
     }
-  }, [status.didJustFinish, repeatEnabled, songs, currentSongId]);
+  }, [status.didJustFinish, repeatEnabled, currentSongId]);
 
   const openImportMenu = () => {
     setImportMenuVisible(true);
@@ -632,14 +681,48 @@ export default function App() {
   };
 
   const toggleFavorite = (songId) => {
-    const updatedFavorites = favoriteSongIds.includes(songId)
-    ? favoriteSongIds.filter((id) => id !== songId)
-    : [...favoriteSongIds, songId];
+    const isFavorite = favoriteSongIds.includes(songId);
+
+    const updatedFavorites = isFavorite
+      ? favoriteSongIds.filter((id) => id !== songId)
+      : [...favoriteSongIds, songId];
 
     const saved = saveFavorites(updatedFavorites);
 
     if (saved) {
       setFavoriteSongIds(updatedFavorites);
+
+      if (isFavorite && albumSource === 'favorites' && selectedAlbum) {
+        setSelectedAlbum((currentAlbum) => {
+          if (!currentAlbum) {
+            return currentAlbum;
+          }
+
+          return {
+            ...currentAlbum,
+            songs: currentAlbum.songs.filter(
+              (song) => song.id !== songId
+            ),
+          };
+        });
+      }
+
+      if (
+        isFavorite &&
+        (
+          playbackQueueSource.current === 'favorites' ||
+          playbackQueueSource.current === 'favoriteAlbum'
+        )
+      ) {
+        playbackQueue.current = playbackQueue.current.filter(
+          (song) => song.id !== songId
+        );
+
+        console.log(
+          'Canción retirada de la cola de Favoritos:',
+          songId
+        );
+      }
     }
   };
 
@@ -683,6 +766,10 @@ export default function App() {
 
             setSongs(updatedSongs);
             setFavoriteSongIds(updatedFavorites);
+
+            playbackQueue.current = playbackQueue.current.filter(
+              (item) => item.id !== song.id
+            );
 
             if(currentSongId === song.id) {
               player.pause();
@@ -733,30 +820,52 @@ export default function App() {
             </Text>
           </View>
 
-          <Pressable
-            style={styles.miniPlayerButton}
-            onPress={() => {
-              if (!currentSongId) {
-                return;
-              } 
+          <View style={styles.miniPlayerControls}>
+            <Pressable
+              style={styles.miniPlayerSkipButton}
+              onPress={playPreviousSong} 
+              disabled={songs.length === 0}
+              accessibilityRole="button"
+              accessibilityLabel="Canción anterior"
+            >
+              <Text style={styles.miniPlayerSkipButtonText}>⏮</Text>
+            </Pressable>
 
-              if (status.playing) {
-                player.pause();
-              } else {
-                player.play();
+            <Pressable
+              style={styles.miniPlayerButton}
+              onPress={() => {
+                if (!currentSong) {
+                  return;
+                }
+
+                if (status.playing) {
+                  player.pause();
+                } else {
+                  player.play();
+                }
+              }}
+              disabled={!currentSongId}
+              accessibilityRole="button"
+              accessibilityLabel={
+                status.playing ? 'Pausar canción' : 'Reproducir canción'
               }
-            }}
-            disabled={!currentSongId}
-            accessibilityRole="button"
-            accessibilityLabel={
-              status.playing ? 'Pausar canción' : 'Reproducir canción'
-            }
-          >
-            <Text style={styles.miniPlayerButtonText}>
-              {status.playing ? '⏸' : '▶'}
-            </Text>
-          </Pressable>
-        </View>    
+            >
+              <Text style={styles.miniPlayerButtonText}>
+                {status.playing ? '⏸' : '▶'}
+              </Text>
+            </Pressable>
+
+            <Pressable  
+              style={styles.miniPlayerSkipButton}
+              onPress={playNextSong}   
+              disabled={songs.length === 0}
+              accessibilityRole="button"
+              accessibilityLabel="Canción siguiente"
+            >
+              <Text style={styles.miniPlayerSkipButtonText}>⏭</Text>
+            </Pressable>
+          </View>    
+        </View>
       )}
 
       <View 
@@ -1206,7 +1315,14 @@ export default function App() {
                         isCurrentSong && styles.songItemActive,
                         { marginBottom: 8},
                       ]}
-                      onPress={() => playSong(item)}
+                      onPress={() => 
+                        playSong(
+                          item,
+                          true, 
+                          selectedAlbum.songs,
+                          albumSource === 'favorites' ? 'favoriteAlbum' : 'album'
+                        )
+                      }
                     >
                       <Text
                         style={[
@@ -1298,7 +1414,14 @@ export default function App() {
                         isCurrentSong && styles.songItemActive,
                         { flex: 1 },
                       ]}
-                      onPress={() => playSong(item)}
+                      onPress={() => 
+                        playSong(
+                          item, 
+                          true, 
+                          displayedSongs,
+                          selectedLibrary === 'favorites' ? 'favorites' : 'all'
+                        )
+                      }
                     >
                       <Text
                         style={[
@@ -1337,7 +1460,7 @@ export default function App() {
                   {selectedLibraryView === 'albums' 
                     ? 'Todavía no tienes álbumes para mostrar.'
                     : selectedLibrary === 'favorites'
-                      ? 'Todavía no tienes álbumes favoritas.'
+                      ? 'Todavía no tienes canciones favoritas.'
                       : 'Importa tus canciones para verlas aquí.'}
                 </Text>
               }
@@ -1429,6 +1552,24 @@ const styles = StyleSheet.create({
   miniPlayerButtonText: {
     color: '#21152F',
     fontSize: 20,
+    fontWeight: 'bold',
+  },
+  miniPlayerControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  miniPlayerSkipButton: {
+    width: 34,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: '#302448',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  miniPlayerSkipButtonText: {
+    color: '#E9DFFF',
+    fontSize: 17,
     fontWeight: 'bold',
   },
   importMenu: {
