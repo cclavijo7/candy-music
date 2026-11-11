@@ -167,6 +167,11 @@ export default function App() {
 
   const currentSong = songs.find((song) => song.id === currentSongId);
   
+  const showMiniPlayer =
+    selectedLibraryView === 'albums' ||
+    selectedLibrary === 'favorites' ||
+    selectedAlbum !== null;
+
   const albums = Object.values(
     songs.reduce((groups, song) => {
       const rawAlbum = String(song.album || '').trim();
@@ -892,7 +897,7 @@ export default function App() {
         <Text style={styles.subtitle}>Tu música, a tu manera.</Text>
       </View>
 
-      {(selectedLibraryView === 'albums' || selectedAlbum) && (
+      {showMiniPlayer && (
         <View style={styles.miniPlayer}>
           <View style={styles.miniPlayerInfo}>
             <Text style={styles.miniPlayerTitle} numberOfLines={1}>
@@ -955,8 +960,7 @@ export default function App() {
       <View 
         style={[
           styles.player,
-          (selectedLibraryView === 'albums' || selectedAlbum) && 
-            styles.playerHidden,
+          showMiniPlayer && styles.playerHidden, 
         ]}
       >
         <View style={styles.artworkContainer}>
