@@ -767,6 +767,21 @@ export default function App() {
             setSongs(updatedSongs);
             setFavoriteSongIds(updatedFavorites);
 
+            if (selectedAlbum) {
+              setSelectedAlbum((currentAlbum) => {
+                if (!currentAlbum) {
+                  return currentAlbum;
+                }
+
+                return {
+                  ...currentAlbum,
+                  songs: currentAlbum.songs.filter(
+                    (item) => item.id !== song.id
+                  ),
+                };
+              });
+            }
+
             playbackQueue.current = playbackQueue.current.filter(
               (item) => item.id !== song.id
             );
@@ -1132,13 +1147,23 @@ export default function App() {
         </View>
 
         <View style={styles.libraryHeader}>
-          <Text style={styles.libraryTitle}>
-            {selectedLibraryView === 'albums'
-             ? 'Álbumes'
-             : selectedLibrary === 'favorites'
-                ? 'Mis favoritos'
-                : 'Mi biblioteca'}
-          </Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.libraryTitle}>
+              {selectedLibraryView === 'albums'
+              ? 'Álbumes'
+              : selectedLibrary === 'favorites'
+                  ? 'Mis favoritos'
+                  : 'Mi biblioteca'}
+            </Text>
+
+            <Text style={styles.libraryCount}>
+              {selectedLibraryView === 'albums'
+                ? `${albums.length} ${albums.length === 1 ? 'álbum' : 'álbumes'}`
+                : selectedLibrary === 'favorites'
+                  ? `${favoriteSongs.length} ${favoriteSongs.length === 1 ? 'canción favorita' : 'canciones favoritas'}`
+                  : `${songs.length} ${songs.length === 1 ? 'canción' : 'canciones'}`}
+            </Text>
+          </View>
 
           <Pressable
             style={styles.sortButton}
@@ -1309,33 +1334,55 @@ export default function App() {
                   const isCurrentSong = item.id === currentSongId;
 
                   return (
-                    <Pressable
-                      style={[
-                        styles.songItem,
-                        isCurrentSong && styles.songItemActive,
-                        { marginBottom: 8},
-                      ]}
-                      onPress={() => 
-                        playSong(
-                          item,
-                          true, 
-                          selectedAlbum.songs,
-                          albumSource === 'favorites' ? 'favoriteAlbum' : 'album'
-                        )
-                      }
-                    >
-                      <Text
+                    <View style={styles.songRow}>  
+                      <Pressable
                         style={[
-                          styles.songItemText,
-                          isCurrentSong && styles.songItemTextActive,
+                          styles.songItem,
+                          isCurrentSong && styles.songItemActive,
+                          { flex: 1, marginBottom: 8},
                         ]}
-                        numberOfLines={1}
+                        onPress={() => 
+                          playSong(
+                            item,
+                            true, 
+                            selectedAlbum.songs,
+                            albumSource === 'favorites' ? 'favoriteAlbum' : 'album'
+                          )
+                        }
                       >
-                        {isCurrentSong ? '♫' : '♪'} {item.name} 
-                      </Text>  
-                    </Pressable>  
+                        <Text
+                          style={[
+                            styles.songItemText,
+                            isCurrentSong && styles.songItemTextActive,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {isCurrentSong ? '♫' : '♪'} {item.name} 
+                        </Text>  
+                      </Pressable>  
+
+                      <Pressable
+                        style={styles.removeSongButton}
+                        onPress={() => {
+                          if (albumSource === 'favorites') {
+                            toggleFavorite(item.id);
+                          } else {
+                            removeSongFromLibrary(item);
+                          }
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel={
+                          albumSource === 'favorites'
+                            ? 'Quitar canción de favoritos'
+                            : 'Quitar canción de la biblioteca'
+                        }
+                      >
+                        <Text style={styles.removeSongButtonText}>X</Text>
+                      </Pressable>
+                    </View>
                   );
-                }}
+                }}        
+
                 ListEmptyComponent={
                   <Text style={styles.emptyText}>
                     Este álbum todavía no tiene canciones.
@@ -1678,6 +1725,12 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     marginBottom: 0,
+  },
+  libraryCount: {
+    color: '#85859D',
+    fontSize: 11,
+    marginTop: 3,
+    fontWeight: '500',
   },
   songRow: {
     flexDirection: 'row',
