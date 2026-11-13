@@ -989,7 +989,7 @@ export default function App() {
           )}
         </View>
 
-          <Text style={styles.songTitle}>
+          <Text style={styles.songTitle} numberOfLines={1}>
             {songTitle || 'Elige una canción'}
           </Text>
 
@@ -1009,9 +1009,15 @@ export default function App() {
             Tu música, siempre contigo.
           </Text>
 
-          <Text style={styles.time}>
-            {formatTime(status.currentTime)} / {formatTime(status.duration)}
-          </Text>
+          <View style={styles.progressTime}>
+            <Text style={styles.progressTimeText}>
+              {formatTime(status.currentTime)}
+            </Text>  
+
+            <Text style={styles.progressTimeText}>
+              {formatTime(status.duration)}
+            </Text>  
+          </View>  
 
           <Slider
             style={styles.slider}
@@ -1042,15 +1048,21 @@ export default function App() {
               console.log('Botón repetición pulsado', newRepeatValue);
               setRepeatEnabled(newRepeatValue);
             }}
+            accessibilityRole="button"
+            accessibilityLabel={
+              repeatEnabled ? 'Desactivar repetición' : 'Activar repetición'
+            }
           >
-            <Text style={styles.repeatButtonText}>🔁</Text>
+            <Text style={styles.repeatButtonText}>↻</Text>
           </Pressable>
 
           <Pressable
             style={styles.skipButton}
             onPress={playPreviousSong}
+            accessibilityRole="button"
+            accessibilityLabel="Canción anterior"
           >
-            <Text style={styles.skipButtonText}>⏮</Text>
+            <Text style={styles.skipButtonText}>|◀</Text>
           </Pressable>
 
           <Pressable
@@ -1062,17 +1074,23 @@ export default function App() {
                 player.play();
               }
             }}
+            accessibilityRole="button"
+            accessibilityLabel={
+              status.playing ? 'Pausar canción' : 'Reproducir canción'
+            }
           >
             <Text style={styles.playButtonText}>
-              {status.playing ? '⏸' : '▶'}
+              {status.playing ? 'Ⅱ' : '▶'}
             </Text>
           </Pressable>
 
           <Pressable
             style={styles.skipButton}
             onPress={playNextSong}
+            accessibilityRole="button"
+            accessibilityLabel="Canción siguiente"
           >
-              <Text style={styles.skipButtonText}>⏭</Text>
+              <Text style={styles.skipButtonText}>▶|</Text>
           </Pressable>
 
           <Pressable
@@ -1919,58 +1937,66 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   artworkContainer: {
-    width: 115,
-    height: 115,
+    width: 210,
+    height: 210,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 6,
+    marginBottom: 18,
+    overflow: 'hidden',
+    borderRadius: 24,
+    backgroundColor: '#29243B',
+    borderWidth: 1,
+    borderColor: '#51436F',
   },
   note: {
     color: '#A78BFA',
-    fontSize: 48,
+    fontSize: 76,
   },
   artwork: {
     width: '100%',
     height: '100%',
-    borderRadius: 16,
+    borderRadius: 24,
     backgroundColor: '#29243B',
   },
   songTitle: {
     color: '#FFFFFF',
-    fontSize: 19,
+    fontSize: 21,
     fontWeight: 'bold',
     textAlign: 'center',
+    marginTop: 2,
+    paddingHorizontal: 8,
   },
   songArtist: {
     color: '#C4B5FD',
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600',
     textAlign: 'center',
-    marginTop: 4,
+    marginTop: 6,
   },
   songAlbum: {
     color: '#85859D',
     fontSize: 12,
     textAlign: 'center',
-    marginTop: 2,
+    marginTop: 4,
   },
-  message: {
-    color: '#B9B9CC',
-    fontSize: 14,
-    textAlign: 'center',
-    marginTop: 8,
-    lineHeight: 20,
-  },
-  time: {
-    color: '#A78BFA',
-    fontSize: 13,
-    fontWeight: '600',
+  progressTime: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 4,
     marginTop: 10,
+  },
+  progressTimeText: {
+    color: '#A78BFA',
+    fontSize: 12,
+    fontWeight: '600',
   },
   slider: {
     width: '100%',
-    height: 32,
-    marginTop: 2,
+    height: 34,
+    marginTop: 0,
+    marginBottom: 2,
   },
   button: {
     backgroundColor: '#7C3AED',
@@ -2021,17 +2047,19 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   playbackControls: {
+    width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 16,
-    marginTop: 4,
-    marginBottom: 2,
+    justifyContent: 'space-around',
+    paddingHorizontal: 2,
+    gap: 6,
+    marginTop: 8,
+    marginBottom: 4,
   },
   repeatButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: '#29243B',
     borderWidth: 1,
     borderColor: '#51436F',
@@ -2039,44 +2067,53 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   repeatButtonText: {
-    fontSize: 20,
+    fontSize: 25,
     color: '#C4B5FD',
   },
   repeatButtonActive: {
     backgroundColor: '#51436F',
-    borderRadius: 12,
-    overflow: 'hidden',
+    borderColor: '#A78BFA'
   },
   skipButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     backgroundColor: '#302448',
+    borderWidth: 1,
+    borderColor: '#51436F',
     alignItems: 'center',
     justifyContent: 'center',
   },
   skipButtonText: {
     color: '#E9DFFF',
-    fontSize: 23,
+    fontSize: 17,
     fontWeight: 'bold',
   },
   playButton: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     backgroundColor: '#A78BFA',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#A78BFA',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
   playButtonText: {
     color: '#21152F',
-    fontSize: 27,
+    fontSize: 28,
     fontWeight: 'bold',
   },
   favoritePlayerButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     backgroundColor: '#302448',
     borderWidth: 1,
     borderColor: '#51436F',
