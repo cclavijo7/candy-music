@@ -652,13 +652,25 @@ const confirmClearLibrary = () => {
 
       const updatedSongs = [...songs, ...newSongs];
 
-      setSongs(updatedSongs);
-
       const saved = saveLibrary(updatedSongs);
+
+      if (!saved) {
+        console.log('Error: no se pudo guardar la biblioteca.');
+
+        Alert.alert(
+          'Error al guardar',
+          'Los archivos se copiaron, pero no se pudo guardar la biblioteca. Intentalo nuevamente.'
+        );
+
+        return;
+      }
+
+      setSongs(updatedSongs);
 
       console.log('Canciones nuevas importadas:', newSongs.length);
       console.log('Total de canciones en biblioteca:', updatedSongs.length);
       console.log('Guardado correcto:', saved);
+
 
     } catch (error) {
       console.log('Error al importar canciones:', error);
@@ -1001,9 +1013,21 @@ const confirmClearLibrary = () => {
 
             if(currentSongId === song.id) {
               player.pause();
+
+              // Cancelar culaquier reproducción automática pendiente.
+              pendingAutoPlay.current = false;
+              waitingForLoad.current = false;
+              waitingForUnload.current = false;
+
+              // Evitar que un evento de finalización anterior.
+              // provoque un cambio inesperado de canción.
+              finishHandled.current =  true;
+
               setSongTitle(null);
               setCurrentSongId(null);
               setSliderPosition(null);
+
+              console.log('Reproducción  pendiente cancelada');
             }
 
             console.log('Canción retirada de la biblioteca:', song.name);
@@ -1068,9 +1092,20 @@ const confirmClearLibrary = () => {
 
             if (albumSongIdsSet.has(currentSongId)) {
               player.pause();
+
+              // Cancelar cualquier reproducción automática pendiente.
+              pendingAutoPlay.current = false;
+              waitingForLoad.current = false;
+              waitingForUnload.current = false;
+
+              // Evitar cambios inesperados por eventos anteriores.
+              finishHandled.current = true;
+
               setCurrentSongId(null);
               setSongTitle(null);
               setSliderPosition(null);
+
+              console.log('Reproducción pendiente cancelada.');
             }
 
             if (selectedAlbum?.id === album.id) {
