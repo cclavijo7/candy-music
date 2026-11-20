@@ -3,11 +3,13 @@ import { getAudioMetadata } from "@missingcore/audio-metadata";
 import { useEffect, useRef, useState } from "react";
 import { Directory, File, Paths } from "expo-file-system";
 import { getDocumentAsync } from "expo-document-picker";
-import { Query, requestPermissionsAsync } from "expo-media-library";
+import { AssetField, MediaType, Query, requestPermissionsAsync } from "expo-media-library";
 import { StatusBar } from "expo-status-bar";
 import { Alert, Animated, Easing, FlatList, Image,  Keyboard, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import Slider from "@react-native-community/slider";
+import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
 
 const musicDirectory = new Directory(Paths.document, 'candy-music-library');
 const libraryFile = new File(musicDirectory, 'library.json');
@@ -52,6 +54,30 @@ function formatTime(seconds) {
   return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
 }
 
+const shuffleWithCurrentFirst = (queue, currentSongId) => {
+  const currentSong = queue.find(
+    (song) => song.id === currentSongId
+  );
+
+  const remainingSongs = queue.filter(
+    (song) => song.id !== currentSongId
+  );
+
+  //Mezclar las canciones restantes.
+  for (let i = remainingSongs.length - 1; i > 0; i--) {
+    const randomIndex = Math.floor(Math.random() * (i + 1));
+
+    [remainingSongs[i], remainingSongs[randomIndex]] = [
+      remainingSongs[randomIndex],
+      remainingSongs[i],
+    ];
+  }
+
+  return currentSong
+    ? [currentSong, ...remainingSongs]
+    : remainingSongs;
+};
+
 const getOriginalFileName = (song) => {
   if (song.originalName) {
     return song.originalName.trim().toLowerCase();
@@ -83,7 +109,15 @@ export default function App() {
   const finishHandled = useRef(false);
   const playbackQueue = useRef([]);
   const playbackQueueSource = useRef('all');
+  const originalQueue = useRef([]);
+
+  const [shuffleEnabled, setShuffleEnabled] = useState(false);
+
   const artworkScale = useRef(new Animated.Value(1)).current;
+  // Animaciones del botón de importación.
+  const importButtonScale = useRef(new Animated.Value(1)).current;
+  const importButtonGlow = useRef(new Animated.Value(0)).current;
+
   useEffect(() => {
     if (!status.playing) {
       artworkScale.stopAnimation();
@@ -144,7 +178,9 @@ export default function App() {
   const [searchVisible, setSearchVisible] = useState(false);
   const [sortOrder, setSortOrder] = useState('asc');
   const [keyboardVisible, setKeyboardVisible] = useState(false);
-
+  
+  //Pantalla actica de Candy Music
+  const [activeScreen, setActiveScreen] = useState('player');
   const favoriteSongs = songs.filter((song) =>
     favoriteSongIds.includes(song.id)
   );
@@ -167,10 +203,21 @@ export default function App() {
 
   const currentSong = songs.find((song) => song.id === currentSongId);
   
-  const showMiniPlayer =
-    selectedLibraryView === 'albums' ||
-    selectedLibrary === 'favorites' ||
-    selectedAlbum !== null;
+  // Calcular el progresp de reproducción.
+  const progressDuration = status.duration || 0;
+  
+  const progressValue = 
+    sliderPosition ?? status.currentTime ?? 0;
+
+  const progressPercent =
+    currentSongId && progressDuration > 0
+      ? Math.min(
+        100,
+        Math.max(0, (progressValue / progressDuration) * 100)
+      )
+    : 0;
+
+  const showMiniPlayer = activeScreen !== 'player';
 
   const albums = Object.values(
     songs.reduce((groups, song) => {
@@ -256,7 +303,38 @@ export default function App() {
       });  
 
   const [importMenuVisible, setImportMenuVisible] = useState(false);
+  const [libraryOptionsVisible, setLibraryOptionsVisible] = useState(false);
   const [repeatEnabled, setRepeatEnabled] = useState(false);
+  
+  const toggleShuffle = () => {
+    if (shuffleEnabled) {
+      //Recuperar el orden original.
+      if(originalQueue.current.length > 0) {
+        playbackQueue.current = [...originalQueue.current];
+      }
+
+      setShuffleEnabled(false);
+      console.log('Reproducción aleatoria desactivada');
+      return;
+    }
+
+    // Guardar el orden normal antes de mezclar.
+    originalQueue.current = [...playbackQueue.current];
+
+    // Mezclar sin cambiar la canción actual.
+    playbackQueue.current = shuffleWithCurrentFirst(
+      playbackQueue.current,
+      currentSongId
+    );
+    
+    setShuffleEnabled(true);
+
+    console.log('Reproducción aleatoria activada');
+    console.log(
+      'Canciones en la cola aleatoria:',
+      playbackQueue.current.length
+    );
+  };
 
   useEffect(() => {
     const showSubscription = Keyboard.addListener(
@@ -325,6 +403,7 @@ export default function App() {
     player.pause();
 
     playbackQueue.current = [];
+    originalQueue.current = [];
     playbackQueueSource.current = 'all';
 
     pendingAutoPlay.current = false;
@@ -344,6 +423,27 @@ export default function App() {
   } catch (error) {
     console.log('Error al vaciar la biblioteca:', error);
   }
+};
+
+const confirmClearLibrary = () => {
+  Alert.alert(
+    'Limpiar biblioteca',
+    '¿Quieres quitar todas las canciones y favoritos de Candy Music? Los archivos de audio permaneceran en tu teléfono.',
+    [
+      {
+        text: 'Cancelar',
+        style: 'cancel',
+      },
+      {
+        text: 'Limpiar',
+        style: 'destructive',
+        onPress: () => {
+          setLibraryOptionsVisible(false);
+          clearLibrary();
+        },
+      },
+    ]
+  );
 };
 
   useEffect(() => {
@@ -398,15 +498,19 @@ export default function App() {
   }, []);
 
   const loadSongs = async () => {
+    console.log("🔎 [ESCANEO] Se ejecutó loadSongs");
+    console.log("🔎 [ESCANEO]  Solicitando permisos...");
     try{
     const permission = await requestPermissionsAsync(false, ['audio']);
-
+    console.log("🔎 [ESCANEO] Resultado de permisos:", permission);
+    
+    console.log("🔎 [ESCANEO] ¿Permiso concedido?:", permission.granted);  
     if (!permission.granted) {
       return;
     }
 
     const assets = await new Query()
-      .eq('mediaType', 'audio')
+      .eq(AssetField.MEDIA_TYPE, MediaType.AUDIO) 
       .limit(100)
       .exe();
 
@@ -468,10 +572,13 @@ export default function App() {
         copyToCacheDirectory: true,
         multiple: true,
       });
-      console.log('Resultado del selector:',
-         result.canceled
-        ? 'Importación cancelada'
-        : `${result.assets.length} archivo(s) seleccionado(s)`);
+
+      console.log(
+         'Resultado del selector:',
+        result.canceled
+          ? 'Importación cancelada'
+          : `${result.assets.length} archivo(s) seleccionado(s)`
+      );
 
     if (result.canceled || result.assets.length === 0) {
       return;
@@ -483,64 +590,76 @@ export default function App() {
 
     const newSongs = [];
 
-    for(const song of result.assets) {
-      const normalizedName = song.name.trim().toLowerCase();
+    for(const [index, song] of result.assets.entries()) {
+      const originalName = String(song.name || 'Audio sin nombre');
+      const normalizedName = originalName.trim().toLowerCase();
 
       if (existingNames.has(normalizedName)) {
-        console.log('Canción duplicada, se omite:', song.name);
+        console.log('Canción duplicada, se omite:', originalName);
         continue;
       }
 
-      const fileName = `${Date.now()}-${song.name}`;
-      const sourceFile = new File(song.uri);
-      const destinationFile = new File(musicDirectory, fileName);
+      try {
+        const fileName = `${Date.now()}-${index}-${originalName}`;
+        const sourceFile = new File(song.uri);
+        const destinationFile = new File(musicDirectory, fileName);
 
-      await sourceFile.copy(destinationFile);
-      console.log('Archivo copiado:', destinationFile.uri);
-      
-      const audioData = await getAudioMetadata(destinationFile.uri, [
-        'name',
-        'artist',
-        'album',
-        'artwork',
-      ]);
+        await sourceFile.copy(destinationFile);
 
-      const importedSongs = {
-        id: destinationFile.uri,
-        name: audioData.metadata.name || song.name,
-        originalName: song.name,
-        uri: destinationFile.uri,
-        artist: audioData.metadata.artist || 'Artista desconocido',
-        album: audioData.metadata.album || 'Album desconocido',
-        artwork: audioData.metadata.artwork || null,
-      };
+        console.log('Archivo copiado:', destinationFile.uri);
+       
+        let metadata ={};
+        
+        try {
+          const audioData = await getAudioMetadata(
+            destinationFile.uri, 
+            ['name', 'artist', 'album', 'artwork',]
+          );
 
-      newSongs.push(importedSongs);
-      existingNames.add(normalizedName);
-    }
+          metadata = audioData?.metadata || {};
 
-    const updatedSongs = [...songs, ...newSongs];
+        } catch (metadataError) {
+          console.log(
+            'No se pudieron leer los metadatos:',
+            originalName,
+            metadataError
+          );
+        }
 
-    setSongs(updatedSongs);
+          const importedSongs = {
+            id: destinationFile.uri,
+            name: metadata.name || originalName,
+            originalName,
+            uri: destinationFile.uri,
+            artist: metadata.artist || 'Artista desconocido',
+            album: metadata.album || 'Album desconocido',
+            artwork: metadata.artwork || null,
+          };
 
-    const saved = saveLibrary(updatedSongs);
+          newSongs.push(importedSongs);
+          existingNames.add(normalizedName);
 
-    console.log('Canciones nuevas importadas:', newSongs.length);
-    console.log('Total de canciones en biblioteca:', updatedSongs.length);
-    console.log('Guardado correcto:', saved);
+          console.log('Canción importada correctamente:', originalName);
+        
+        } catch (songError) {
+          console.log(
+            'No se pudo importar esta canción:',
+            originalName,
+            songError
+          );
+        }
+      }  
 
-    const firstSong = newSongs[0];
+      const updatedSongs = [...songs, ...newSongs];
 
-    if (firstSong) {
-        playbackQueue.current = updatedSongs;
-        playbackQueueSource.current = 'all';
+      setSongs(updatedSongs);
 
-        player.replace({ uri: firstSong.uri });
-        setSongTitle(firstSong.name);
-        setCurrentSongId(firstSong.id);
-        setSliderPosition(null);
-        player.play();
-      }
+      const saved = saveLibrary(updatedSongs);
+
+      console.log('Canciones nuevas importadas:', newSongs.length);
+      console.log('Total de canciones en biblioteca:', updatedSongs.length);
+      console.log('Guardado correcto:', saved);
+
     } catch (error) {
       console.log('Error al importar canciones:', error);
     }
@@ -550,14 +669,28 @@ export default function App() {
     song, 
     autoPlay = true, 
     queue = songs,
-    queueSource = playbackQueueSource.current
+    queueSource = playbackQueueSource.current,
+    preserveQueue = false
   ) => {
-    playbackQueue.current = queue.length > 0 ? queue : [song];
+    let nextQueue = queue;
+
+    if (!preserveQueue) {
+      // Guardar el orden original de la lista seleccionada.
+      originalQueue.current =[...queue];
+
+      // Si Shuffle esta activo, mezclar dejando la cancion elegida primero.
+      if (shuffleEnabled) {
+        nextQueue = shuffleWithCurrentFirst(queue, song.id); 
+      }
+    }
+
+    playbackQueue.current = nextQueue.length > 0 ? nextQueue : [song];
     playbackQueueSource.current = queueSource;
     
     console.log('Cancion seleccionada:', song.name, song.uri);
     console.log('Cola de reproducción:', playbackQueue.current.length);
     console.log('Origen de la cola:', playbackQueueSource.current);
+    console.log('Shuffle activo:', shuffleEnabled);
 
     player.replace({ uri: song.uri });
     setSongTitle(song.name);
@@ -567,6 +700,7 @@ export default function App() {
     if (autoPlay) {
       pendingAutoPlay.current = false;
       waitingForLoad.current = false;
+      waitingForUnload.current = false;
       player.play();
     } else {
       pendingAutoPlay.current = true;
@@ -595,7 +729,8 @@ export default function App() {
       queue[nextIndex], 
       true, 
       queue,
-      playbackQueueSource.current
+      playbackQueueSource.current,
+      true
     );
   };
 
@@ -619,7 +754,8 @@ export default function App() {
       queue[previousIndex],
       true, 
       queue,
-      playbackQueueSource.current
+      playbackQueueSource.current,
+      true
     );
   };
 
@@ -659,13 +795,46 @@ export default function App() {
         queue[nextIndex],
         false,
         queue,
-        playbackQueueSource.current
+        playbackQueueSource.current,
+        true
       );
     }
   }, [status.didJustFinish, repeatEnabled, currentSongId]);
 
   const openImportMenu = () => {
     setImportMenuVisible(true);
+  };
+
+  const animateImportButtonIn = () => {
+    Animated.parallel([
+      Animated.spring(importButtonScale, {
+        toValue: 0.96,
+        useNativeDriver: true,
+      }),
+
+      Animated.timing(importButtonGlow, {
+        toValue: 1,
+        duration: 180,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
+
+  const animateImportButtonOut = () => {
+    Animated.parallel([
+      Animated.spring(importButtonScale, {
+        toValue: 1,
+        friction: 4,
+        tension: 100,
+        useNativeDriver: true,
+      }),
+
+      Animated.timing(importButtonGlow, {
+        toValue: 0,
+        duration: 250,
+        useNativeDriver: true,
+      }),
+    ]).start();
   };
 
   const openAlbum = (album) => {
@@ -685,6 +854,31 @@ export default function App() {
     setSearchVisible(false);
   };
 
+  const navigateTo = (screen) => {
+    Keyboard.dismiss();
+
+    setActiveScreen(screen);
+    setLibraryOptionsVisible(false);
+    setSelectedAlbum(null);
+    setSearchQuery('');
+    setSearchVisible(false);
+
+    if (screen === 'library') {
+      setSelectedLibrary('all');
+      setSelectedLibraryView('songs');
+    }
+
+    if (screen === 'albums') {
+      setSelectedLibrary('all');
+      setSelectedLibraryView('albums');
+    }
+
+    if (screen === 'favorites') {
+      setSelectedLibrary('favorites');
+      setSelectedLibraryView('songs');
+    }
+  };
+
   const toggleFavorite = (songId) => {
     const isFavorite = favoriteSongIds.includes(songId);
 
@@ -698,19 +892,25 @@ export default function App() {
       setFavoriteSongIds(updatedFavorites);
 
       if (isFavorite && albumSource === 'favorites' && selectedAlbum) {
-        setSelectedAlbum((currentAlbum) => {
-          if (!currentAlbum) {
-            return currentAlbum;
-          }
+        const updatedAlbumSongs = selectedAlbum.songs.filter(
+          (song) => song.id !== songId
+        );
+
+        if (updatedAlbumSongs.length === 0) {
+          setSelectedAlbum(null);
+        } else {
+          setSelectedAlbum((currentAlbum) => {
+            if (!currentAlbum) {
+              return currentAlbum;
+            }
 
           return {
             ...currentAlbum,
-            songs: currentAlbum.songs.filter(
-              (song) => song.id !== songId
-            ),
+            songs: updatedAlbumSongs,
           };
         });
       }
+    }  
 
       if (
         isFavorite &&
@@ -720,6 +920,10 @@ export default function App() {
         )
       ) {
         playbackQueue.current = playbackQueue.current.filter(
+          (song) => song.id !== songId
+        );
+        
+        originalQueue.current = originalQueue.current.filter(
           (song) => song.id !== songId
         );
 
@@ -791,6 +995,10 @@ export default function App() {
               (item) => item.id !== song.id
             );
 
+            originalQueue.current = originalQueue.current.filter(
+              (item) => item.id !== song.id
+            );
+
             if(currentSongId === song.id) {
               player.pause();
               setSongTitle(null);
@@ -854,6 +1062,10 @@ export default function App() {
               (song) => !albumSongIdsSet.has(song.id)
             );
 
+            originalQueue.current = originalQueue.current.filter(
+              (song) => !albumSongIdsSet.has(song.id)
+            );
+
             if (albumSongIdsSet.has(currentSongId)) {
               player.pause();
               setCurrentSongId(null);
@@ -890,7 +1102,11 @@ export default function App() {
 
       <StatusBar style="light" />
 
-      <View style={{ display: keyboardVisible ? 'none' : 'flex' }}>
+      <View style={{
+         display: keyboardVisible ? 'none' : 'flex',
+         flex: activeScreen === 'player' ? 1 : 0,
+        }}
+      >
 
       <View style={styles.header}>
         <Text style={styles.title}>CANDY MUSIC</Text>
@@ -899,7 +1115,24 @@ export default function App() {
 
       {showMiniPlayer && (
         <View style={styles.miniPlayer}>
-          <View style={styles.miniPlayerInfo}>
+          {currentSong?.artwork ? (
+            <Image
+              source={{ uri: currentSong.artwork }}
+              style={styles.miniPlayerArtwork}
+              resizeMode="cover"
+            />
+          ) : (
+            <View style={styles.miniPlayerArtworkPlaceholder}>
+              <Text style={styles.miniPlayerArtworkIcon}>♫</Text>
+            </View>      
+          )}
+
+          <Pressable
+             style={styles.miniPlayerInfo}
+             onPress={() => setActiveScreen('player')}
+             accessibilityRole="button"
+             accessibilityLabel="Abrir reproductor completo"
+          >  
             <Text style={styles.miniPlayerTitle} numberOfLines={1}>
               {currentSong?.name || songTitle || 'Candy Music'}
             </Text>
@@ -907,13 +1140,13 @@ export default function App() {
             <Text style={styles.miniPlayerArtist} numberOfLines={1}>
               {currentSong?.artist || 'Tu música, a tu manera'}
             </Text>
-          </View>
+          </Pressable>
 
           <View style={styles.miniPlayerControls}>
             <Pressable
               style={styles.miniPlayerSkipButton}
               onPress={playPreviousSong} 
-              disabled={songs.length === 0}
+              disabled={playbackQueue.current.length === 0}
               accessibilityRole="button"
               accessibilityLabel="Canción anterior"
             >
@@ -947,7 +1180,7 @@ export default function App() {
             <Pressable  
               style={styles.miniPlayerSkipButton}
               onPress={playNextSong}   
-              disabled={songs.length === 0}
+              disabled={playbackQueue.current.length === 0}
               accessibilityRole="button"
               accessibilityLabel="Canción siguiente"
             >
@@ -957,86 +1190,218 @@ export default function App() {
         </View>
       )}
 
-      <View 
-        style={[
-          styles.player,
-          showMiniPlayer && styles.playerHidden, 
-        ]}
-      >
-        <View style={styles.artworkContainer}>
-          {currentSong?.artwork ? (
-            <Animated.Image
-              source={{ uri: currentSong.artwork }}
-              style={[
-                styles.artwork,
-              {
-                transform: [{ scale: artworkScale }],
-              },
-              ]}  
-              resizeMode="cover"
-            />
-          ) : (
-            <Animated.Text 
-              style={[
-                styles.note,
-                {
-                  transform: [{ scale: artworkScale }],
-                },
-              ]}
+      {activeScreen === 'player' && (
+      <View style={styles.player}>
+        
+        {/* ZONA 1: PORTADA E INFORMACIÓN */}
+        <View style={styles.playerInfoRow}>
+          <View style={styles.artworkContainer}>
+            {currentSong?.artwork ? (
+              <Animated.Image
+                source={{ uri: currentSong.artwork }}
+                style={[
+                  styles.artwork,
+                  {
+                    transform: [{ scale: artworkScale }],
+                  },
+                ]}  
+                resizeMode="cover"
+              />
+            ) : (
+              <Animated.View
+                style={[
+                  styles.artworkFallback,
+                  {
+                    transform: [{ scale: artworkScale }],
+                  },
+                ]}
+              >
+                <LinearGradient
+                  colors={['#55358A', '#30204F', '#19172B']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.artworkFallbackGradient}
+                >
+                  <Ionicons
+                    name="musical-notes"
+                    size={88}
+                    color="#D8C5FF"
+                  />
+                </LinearGradient>  
+              </Animated.View>  
+            )}
+          </View>
+
+          <View style={styles.playerSongInfo}>  
+            <Text style={styles.songTitle} numberOfLines={1}>
+              {songTitle || 'Elige una canción'}
+            </Text>
+
+            <Text style={styles.songArtist} numberOfLines={1}>
+              {currentSong?.artist || 'Artista desconocido'}
+            </Text>
+
+            {currentSong?.album ? (
+                <Text style={styles.songAlbum} numberOfLines={2}>
+                  {currentSong.album}
+                </Text>
+            ) : null}
+
+            <Pressable
+              style={styles.favoritePlayerButton}
+              onPress={() =>{
+                if (currentSongId) toggleFavorite(currentSongId);
+              }}
+              disabled={!currentSongId}
+              accessibilityRole="button"
+              accessibilityLabel={
+                favoriteSongIds.includes(currentSongId)
+                  ? 'Quitar canción de favoritos'
+                  : 'Agregar canción a favoritos'
+              }
             >
-              ♫
-            </Animated.Text>  
-          )}
+              <Ionicons
+                name={
+                  favoriteSongIds.includes(currentSongId)
+                    ? 'heart'
+                    : 'heart-outline'
+                }
+                size={25}
+                color={
+                  favoriteSongIds.includes(currentSongId)
+                    ? '#FF4D6D'
+                    : '#D8D5E5'
+                }
+                style={{ transform: [{ translateX: 1 }] }}
+              />  
+            </Pressable>  
+          </View>  
         </View>
 
-          <Text style={styles.songTitle} numberOfLines={1}>
-            {songTitle || 'Elige una canción'}
-          </Text>
-
-          {currentSong && (
-            <>
-              <Text style={styles.songArtist} numberOfLines={1}>
-                {currentSong.artist || 'Artista desconocido'}
-              </Text>
-
-              <Text style={styles.songAlbum} numberOfLines={1}>
-                {currentSong.album || 'Album desconocido'}
-              </Text>
-            </>
-          )}
-
-          <Text style={styles.message}>
-            Tu música, siempre contigo.
-          </Text>
-
-          <View style={styles.progressTime}>
+        {/* ZONA 2: BARRA DE PROGRESO */}    
+        <View style={styles.playerProgress}>  
+          <View style={styles.progressTime}>  
             <Text style={styles.progressTimeText}>
-              {formatTime(status.currentTime)}
+              {currentSongId ? formatTime(status.currentTime) : '0:00'}
             </Text>  
 
             <Text style={styles.progressTimeText}>
-              {formatTime(status.duration)}
+              {currentSongId ? formatTime(status.duration) : '0:00'}
             </Text>  
-          </View>  
+          </View>
+
+          <View style={styles.progressTrack}>
+            <LinearGradient
+              colors={['#7C3AED', '#A78BFA', '#C4B5FD']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={[
+                styles.progressFill,
+                { width: `${progressPercent}%`},
+              ]}
+            />
+
+          <View
+            style={[
+              styles.progressThumb,
+              { left: `${progressPercent}%` },
+            ]}
+          />      
 
           <Slider
-            style={styles.slider}
+            style={styles.progressSlider}
             minimumValue={0}
-            maximumValue={status.duration || 1}
-            value={sliderPosition ?? status.currentTime}
-            minimumTrackTintColor="#A78BFA"
-            maximumTrackTintColor="#393653"
-            thumbTintColor="#A78BFA"
-            onValueChange={(value) => {
-              setSliderPosition(value);
-            }}
-            onSlidingComplete={async(value) => {
+            maximumValue={progressDuration > 0 ? progressDuration : 1}
+            value={progressValue}
+            minimumTrackTintColor="transparent"
+            maximumTrackTintColor="transparent"
+            thumbTintColor="transparent"
+            onValueChange={(value) => setSliderPosition(value)}
+            onSlidingComplete={async (value) => {
+              if (!currentSongId) return;
+
               await player.seekTo(value);
               setSliderPosition(null);
             }}
           />
+        </View>  
+      </View>
 
+        {/* ZONA 3: CONTROLES */}
         <View style={styles.playbackControls}>
+
+          {/* SHUFFLE */}
+          <Pressable
+            style={[
+              styles.repeatButton,
+              shuffleEnabled && styles.repeatButtonActive,
+            ]}
+            onPress={toggleShuffle}
+            accessibilityRole="button"
+            accessibilityLabel={
+              shuffleEnabled
+                ? 'Desactivar reproducción aleatoria'
+                : 'Activar reproducción aleatoria'
+            }
+          >
+            <Ionicons
+              name="shuffle"
+              size={22}
+              color={shuffleEnabled ? '#FFFFFF' : '#B9A9D5'}
+            />  
+          </Pressable>
+
+          {/* CANCIÓN ANTERIOR*/ }
+          <Pressable
+            style={styles.skipButton}
+            onPress={playPreviousSong}
+            accessibilityRole="button"
+            accessibilityLabel="Canción anterior"
+          >
+            <Ionicons
+              name="play-skip-back"
+              size={23}
+              color="#FFFFFF"
+            />  
+          </Pressable>
+
+          {/* REPRODUCIR / PAUSAR */}
+          <Pressable
+            style={styles.playButton}
+            onPress={() =>{
+              if (status.playing) {
+                player.pause();
+              } else {
+                player.play();
+              }
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={
+              status.playing ? 'Pausar canción' : 'Reproducir canción'
+            }
+          >
+            <Ionicons
+              name={status.playing ? 'pause' : 'play'}
+              size={29}
+              color="#FFFFFF"
+            />
+          </Pressable>
+
+          {/* CANCIÓN SIGUIENTE */}
+           <Pressable
+            style={styles.skipButton}
+            onPress={playNextSong}
+            accessibilityRole="button"
+            accessibilityLabel="Canción siguiente"
+          >
+              <Ionicons
+                name="play-skip-forward"
+                size={23}
+                color="#FFFFFF"
+              />  
+          </Pressable>
+
+          {/* REPETIR */}  
           <Pressable
             style={[
               styles.repeatButton,
@@ -1053,89 +1418,18 @@ export default function App() {
               repeatEnabled ? 'Desactivar repetición' : 'Activar repetición'
             }
           >
-            <Text style={styles.repeatButtonText}>↻</Text>
+            <Ionicons
+              name="repeat"
+              size={22}
+              color={repeatEnabled ? '#FFFFFF' : '#B9A9D5'}
+            />  
           </Pressable>
 
-          <Pressable
-            style={styles.skipButton}
-            onPress={playPreviousSong}
-            accessibilityRole="button"
-            accessibilityLabel="Canción anterior"
-          >
-            <Text style={styles.skipButtonText}>|◀</Text>
-          </Pressable>
-
-          <Pressable
-            style={styles.playButton}
-            onPress={() =>{
-              if (status.playing) {
-                player.pause();
-              } else {
-                player.play();
-              }
-            }}
-            accessibilityRole="button"
-            accessibilityLabel={
-              status.playing ? 'Pausar canción' : 'Reproducir canción'
-            }
-          >
-            <Text style={styles.playButtonText}>
-              {status.playing ? 'Ⅱ' : '▶'}
-            </Text>
-          </Pressable>
-
-          <Pressable
-            style={styles.skipButton}
-            onPress={playNextSong}
-            accessibilityRole="button"
-            accessibilityLabel="Canción siguiente"
-          >
-              <Text style={styles.skipButtonText}>▶|</Text>
-          </Pressable>
-
-          <Pressable
-            style={styles.favoritePlayerButton}
-            onPress={() => {
-              if (currentSongId) {
-                toggleFavorite(currentSongId);
-              }
-            }}
-            disabled={!currentSongId}
-            accessibilityRole="button"
-            accessibilityLabel={
-              favoriteSongIds.includes(currentSongId)
-              ? 'Quitar canción de favoritos'
-              : 'Agregar canción a favoritos'
-            }
-          >
-            <Text
-              style={[
-                styles.favoritePlayerButtonText,
-                favoriteSongIds.includes(currentSongId) &&
-                  styles.favoritePlayerButtonActive,
-              ]}
-            >
-              {favoriteSongIds.includes(currentSongId) ? "♥" : "♡"}
-            </Text>
-          </Pressable>
         </View>
-
-        <View style={styles.secondaryActions}>
-          <Pressable style={styles.secondaryButton} onPress={openImportMenu}>
-              <Text style={styles.secondaryButtonText}>📂 Importar canciones</Text>
-          </Pressable>
-
-          <Pressable
-            style={styles.secondaryButton}
-            onPress={loadSongs}
-            >
-            <Text style={styles.secondaryButtonText}>🔎 Buscar canciones</Text>
-          </Pressable>
-        </View>
-        </View>
+      </View>
+      )}
       </View>  
-
-
+      
       {importMenuVisible && (
         <View style={styles.importMenu}>
           <Text style={styles.libraryTitle}>
@@ -1161,151 +1455,207 @@ export default function App() {
         </View>
       )}
 
+      {activeScreen !== 'player' && (
       <View style={styles.library}>
-        <View style={styles.libraryTabs}>
-          <Pressable
-            style={[
-              styles.libraryTab,
-              selectedLibraryView === 'songs' &&
-                selectedLibrary === 'all' &&
-                styles.libraryTabActive,
-            ]}
-            onPress={() => {
-              setSelectedAlbum(null);
-              setSelectedLibraryView('songs');
-              setSelectedLibrary('all');
-            }}
-          >
-            <Text 
-              style={[
-                styles.libraryTabText,
-                selectedLibraryView === 'songs' &&
-                  selectedLibrary === 'all' &&
-                  styles.libraryTabTextActive,
-              ]}
-            >      
-              ♫ Biblioteca
-            </Text>
-          </Pressable>
 
-          <Pressable
-            style={[
-              styles.libraryTab,
-              selectedLibraryView === 'albums' &&
-               styles.libraryTabActive,
-            ]}
-            onPress={() => {
-              setSelectedAlbum(null);
-              setSelectedLibraryView('albums');
-              setSelectedLibrary('all');
-            }}  
-          >
-            <Text 
+        {selectedLibrary === 'favorites' && !selectedAlbum && (
+          <View style={styles.favoriteTabs}>
+            <Pressable
               style={[
-                styles.libraryTabText,
-                selectedLibraryView === 'albums' &&
-                  styles.libraryTabTextActive,
-              ]}
-            >      
-              ◉ Álbumes
-            </Text>
-          </Pressable>
-
-          <Pressable
-            style={[
-              styles.libraryTab,
-              selectedLibraryView === 'songs' &&
-                selectedLibrary === 'favorites' &&
-                styles.libraryTabActive,
-            ]}
-            onPress={() => {
-              setSelectedAlbum(null);
-              setSelectedLibraryView('songs');
-              setSelectedLibrary('favorites');
-            }}
-          >
-            <Text 
-              style={[
-                styles.libraryTabText,
+                styles.favoriteTab,
                 selectedLibraryView === 'songs' &&
-                  selectedLibrary === 'favorites' &&
-                  styles.libraryTabTextActive,
+                  styles.favoriteTabActive,
               ]}
+              onPress={() => setSelectedLibraryView('songs')}
             >
-              ♥ Favoritos
-            </Text>
-          </Pressable>  
-        </View>
+              <Text
+                style={[
+                  styles.favoriteTabText,
+                  selectedLibraryView === 'songs' &&
+                    styles.favoriteTabTextActive,
+                ]}
+              >
+                ♫ Canciones
+              </Text>  
+            </Pressable>
+
+            <Pressable
+              style={[
+                styles.favoriteTab,
+                selectedLibraryView === 'albums' &&
+                  styles.favoriteTabActive,
+              ]}
+                onPress={() => setSelectedLibraryView('albums')}
+            >
+              <Text
+                style={[
+                  styles.favoriteTabText,
+                  selectedLibraryView === 'albums' &&
+                    styles.favoriteTabTextActive,
+                ]}
+              >
+                ◉ Álbumes
+              </Text>  
+            </Pressable> 
+          </View>       
+        )}
 
         <View style={styles.libraryHeader}>
-          <View style={{ flex: 1 }}>
+          <View style={styles.libraryHeading}>
             <Text style={styles.libraryTitle}>
-              {selectedLibraryView === 'albums'
-              ? 'Álbumes'
-              : selectedLibrary === 'favorites'
-                  ? 'Mis favoritos'
+              {selectedLibrary === 'favorites'
+                ? selectedLibraryView === 'albums'
+                  ? 'Álbumes favoritos'
+                  : 'Mis canciones favoritas'
+                : selectedLibraryView === 'albums'
+                  ? 'Álbumes'
                   : 'Mi biblioteca'}
             </Text>
 
             <Text style={styles.libraryCount}>
-              {selectedLibraryView === 'albums'
-                ? `${albums.length} ${albums.length === 1 ? 'álbum' : 'álbumes'}`
-                : selectedLibrary === 'favorites'
-                  ? `${favoriteSongs.length} ${favoriteSongs.length === 1 ? 'canción favorita' : 'canciones favoritas'}`
-                  : `${songs.length} ${songs.length === 1 ? 'canción' : 'canciones'}`}
+              {selectedLibrary === 'favorites'
+                ? selectedLibraryView === 'albums'
+                  ? `${favoriteAlbums.length} ${favoriteAlbums.length === 1 ? 'álbum favorito' : 'álbumes favoritos'}`
+                  : `${favoriteSongs.length} ${favoriteSongs.length === 1 ? 'canción favorita' : 'canciones favoritas'}`
+                : selectedLibraryView === 'albums'
+                    ? `${albums.length} ${albums.length === 1 ? 'álbum' : 'álbumes'}`
+                    : `${songs.length} ${songs.length === 1 ? 'canción' : 'canciones'}`}
             </Text>
           </View>
 
-          <Pressable
-            style={styles.sortButton}
-            onPress={() => {
-              setSortOrder((currentOrder) =>
-                currentOrder === 'asc' ? 'desc' : 'asc'
-              );
-            }}
-          >
-            <Text style={styles.sortButtonText}>
-              {sortOrder === 'asc' ? 'A-Z ↕' : 'Z-A ↕'}
-            </Text>
-          </Pressable>
-
-          <Pressable
-            style={styles.searchToggleButton}
-            onPress={() => {
-              if (searchVisible) {
-                setSearchVisible(false);
-                setSearchQuery('');
-                Keyboard.dismiss();
-              } else {
-                setSearchVisible(true);
-              }
-            }}
-            accessibilityRole="button"
-            accessibilityLabel={
-              searchVisible ? 'Cerrar búsqueda' : 'Abrir búsqueda'
-            }
-          >
-            <Text style={styles.searchToggleButtonText}>
-              {searchVisible ? 'X' : '⌕'}
-            </Text>
-          </Pressable>  
-
-          {selectedLibrary === 'all' && (
+          <View style={styles.libraryHeaderActions}>      
             <Pressable
-              style={styles.clearLibraryButton}
-              onPress={clearLibrary}
+              style={styles.headerIconButton}
+              onPress={() => {
+                if (searchVisible) {
+                  setSearchVisible(false);
+                  setSearchQuery('');
+                  Keyboard.dismiss();
+                } else {
+                  setSearchVisible(true);
+                }
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={
+                searchVisible ? 'Cerrar búsqueda' : 'Abrir búsqueda'
+              }
             >
-              <Text style={styles.clearLibraryButtonText}>Limpiar</Text>
+              <Text style={styles.headerIconText}>
+                {searchVisible ? 'x' : '⌕'}
+              </Text>
             </Pressable>
-          )}
+
+            <Pressable
+              style={styles.headerIconButton}
+              onPress={() => {
+                setSortOrder((currentOrder) =>
+                  currentOrder === 'asc' ? 'desc' : 'asc'
+                );
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={
+                sortOrder === 'asc'
+                  ? 'Order de Z a A'
+                  : 'Order de A a Z'
+              }
+            >
+              <Text style={styles.headerSortText}>
+                {sortOrder === 'asc' ? 'A-Z' : 'Z-A'}
+              </Text>
+            </Pressable>  
+
+            {activeScreen === 'library' && (
+              <Pressable
+                style={[
+                  styles.headerIconButton,
+                  libraryOptionsVisible && styles.headerIconButtonActive,
+                ]}  
+                onPress={() =>
+                  setLibraryOptionsVisible((visible) => !visible)
+                }  
+                accessibilityRole="button"
+                accessibilityLabel="Más opciones de biblioteca"
+              >
+                <Text style={styles.headerIconText}>...</Text>
+              </Pressable>  
+            )}
+          </View>
         </View>
 
+        {activeScreen === 'library' && (
+          <View style={styles.libraryPrimaryActions}>
+            <Animated.View            
+              style={[
+                styles.importButtonContainer,
+                {
+                  transform: [{ scale: importButtonScale }],
+                },
+              ]}  
+            >
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  styles.importButtonGlow,
+                  {
+                    opacity: importButtonGlow,
+                    transform: [
+                      {
+                        scale: importButtonGlow.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0.96, 1.08],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              />
+
+              <Pressable
+                style={styles.importPrimaryButton}
+                onPress={openImportMenu}
+                onPressIn={animateImportButtonIn}
+                onPressOut={animateImportButtonOut}
+                accessibilityRole="button"
+                accessibilityLabel="Importar música"
+              >
+                <Ionicons
+                  name="musical-notes"
+                  size={19}
+                  color="#FFFFFF"
+                />
+
+                <Text style={styles.importPrimaryButtonText}>
+                  Importar música
+                </Text>  
+              </Pressable>
+            </Animated.View>
+          </View>       
+        )}
+        
+        {activeScreen === 'library' && libraryOptionsVisible && (
+          <View style={styles.libraryOptionsMenu}>
+
+            {selectedLibrary === 'all' &&
+              selectedLibraryView === 'songs' &&(
+                <Pressable
+                  style={styles.libraryOption}
+                  onPress={confirmClearLibrary}
+                  accessibilityRole="button"
+                  accessibilityLabel="Limpiar biblioteca"
+                >
+                  <Text style={styles.libraryOptionDanger}>
+                    Limpiar biblioteca
+                  </Text>   
+                </Pressable>  
+              )}
+          </View>        
+        )}
+            
         {searchVisible && (  
           <TextInput
             style={styles.searchInput}
             placeholder={
-              selectedLibraryView === 'albums' ||
-              selectedLibrary === 'favorites'
+              selectedLibraryView === 'albums'
                 ? 'Buscar álbum, artista o canción...'
                 : 'Buscar una canción...'
             }    
@@ -1511,25 +1861,31 @@ export default function App() {
             </View>
           ) : (
             <FlatList
+              key={selectedLibraryView === 'albums' ? 'albums-grid' : 'songs-list'}
               style={{ flex: 1 }}
+              numColumns={selectedLibraryView === 'albums' ? 2 : 1}
+              columnWrapperStyle={
+                selectedLibraryView === 'albums'
+                  ? styles.albumGridRow
+                  : undefined
+              }
               data={
-                selectedLibraryView === 'albums' && selectedLibrary === 'all'
-                  ? displayedAlbums
-                  : selectedLibrary === 'favorites'
+                selectedLibrary === 'favorites' 
+                  ? selectedLibraryView === 'albums'
                     ? displayedFavoriteAlbums
+                    : displayedSongs
+                  : selectedLibraryView === 'albums'
+                    ? displayedAlbums
                     : displayedSongs 
               }
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="on-drag"
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => {
-                if (
-                  (selectedLibraryView === 'albums' && selectedLibrary === 'all') ||
-                  selectedLibrary === 'favorites'
-                 ) {
+                if (selectedLibraryView === 'albums') {
                   return (
                     <Pressable
-                      style={styles.albumRow}
+                      style={styles.albumCard}
                       onPress={() => openAlbum(item)}
                       accessibilityRole="button"
                       accessibilityLabel={`Abrir álbum ${item.name}`}
@@ -1537,25 +1893,25 @@ export default function App() {
                       {item.artwork ? (
                         <Image
                           source={{ uri: item.artwork }}
-                          style={styles.albumArtwork}
+                          style={styles.albumCardArtwork}
                           resizeMode="cover"
                         />
                       ) : (
-                        <View style={styles.albumArtworkFallback}>
+                        <View style={styles.albumCardArtworkFallback}>
                           <Text style={styles.albumArtworkNote}>♫</Text>
                         </View>
                       )}  
 
-                        <View style={styles.albumInfo}>
-                          <Text style={styles.albumName} numberOfLines={1}>
+                        <View style={styles.albumCardInfo}>
+                          <Text style={styles.albumcardName} numberOfLines={1}>
                             {item.name}
                           </Text>
 
-                          <Text style={styles.albumArtist} numberOfLines={1}>
+                          <Text style={styles.albumCardArtist} numberOfLines={1}>
                             {item.artist}
                           </Text> 
 
-                          <Text style={styles.albumSongCount}>
+                          <Text style={styles.albumCardCount}>
                             {item.songs.length}{' '}
                             {item.songs.length === 1 
                               ? selectedLibrary === 'favorites'
@@ -1563,7 +1919,7 @@ export default function App() {
                                 : 'canción'
                               : selectedLibrary === 'favorites'
                                 ? 'favoritas'
-                                : 'canciones '}
+                                : 'canciones'}
                           </Text>
                         </View>    
                     </Pressable>    
@@ -1623,16 +1979,73 @@ export default function App() {
               }}
               ListEmptyComponent={
                 <Text style={styles.emptyText}>
-                  {selectedLibraryView === 'albums' 
-                    ? 'Todavía no tienes álbumes para mostrar.'
-                    : selectedLibrary === 'favorites'
-                      ? 'Todavía no tienes canciones favoritas.'
-                      : 'Importa tus canciones para verlas aquí.'}
+                  {selectedLibrary === 'favorites'
+                    ? selectedLibraryView === 'albums' 
+                      ? 'Todavía no tienes álbumes favoritos.'
+                      : 'Todavía no tienes canciones favoritas.'
+                    : selectedLibraryView === 'albums'
+                        ? 'Todavía no tienes álbumes para mostrar.'
+                        : 'Importa tus canciones para verlas aquí.'}
                 </Text>
               }
             />
           )}  
-          </View>  
+          </View>
+          )}  
+
+          <View style={styles.bottomNavigation}>
+            <Pressable
+              style={[
+                styles.bottomNavigationItem,
+                activeScreen === 'player' && styles.bottomNavigationItemActive,
+              ]}
+              onPress={() => navigateTo('player')}
+              accessibilityRole="button"
+              accessibilityLabel="Ir al reproductor"
+            >
+              <Text style={styles.bottomNavigationIcon}>♫</Text>
+              <Text style={styles.bottomNavigationText}>Reproductor</Text>
+            </Pressable>
+
+            <Pressable
+              style={[
+                styles.bottomNavigationItem,
+                activeScreen === 'library' && styles.bottomNavigationItemActive,
+              ]}
+              onPress={() => navigateTo('library')}
+              accessibilityRole="button"
+              accessibilityLabel="Ir a la biblioteca"
+            >
+              <Text style={styles.bottomNavigationIcon}>▤</Text>
+              <Text style={styles.bottomNavigationText}>Biblioteca</Text>
+            </Pressable>
+
+            <Pressable
+              style={[
+                styles.bottomNavigationItem,
+                activeScreen === 'albums' && styles.bottomNavigationItemActive,
+              ]}
+              onPress={() => navigateTo('albums')}
+              accessibilityRole="button"
+              accessibilityLabel="Ir a álbumes"
+            >
+              <Text style={styles.bottomNavigationIcon}>▣</Text>
+              <Text style={styles.bottomNavigationText}>Álbumes</Text>
+            </Pressable>
+
+            <Pressable
+              style={[
+                styles.bottomNavigationItem,
+                activeScreen === 'favorites' && styles.bottomNavigationItemActive,
+              ]}
+              onPress={() => navigateTo('favorites')}
+              accessibilityRole="button"
+              accessibilityLabel="Ir a favoritos"
+            >
+              <Text style={styles.bottomNavigationIcon}>♥</Text>
+              <Text style={styles.bottomNavigationText}>Favoritos</Text>
+            </Pressable>
+          </View>
 
         <Text style={styles.footer}> TU MÚSICA. TU MOMENTO</Text>
       </KeyboardAvoidingView>  
@@ -1668,74 +2081,120 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   player: {
+    flex: 1,
     width: '100%',
-    backgroundColor: '#1C1C2E',
-    borderRadius: 24,
-    padding: 12,
-    alignItems: 'center',
+    backgroundColor: '#211B32',
+    borderRadius: 26,
+    paddingHorizontal: 16,
+    paddingVertical: 18,
     borderWidth: 1,
-    borderColor: '#393653',
+    borderColor: '#494064',
+    shadowColor: '#8B5CF6',
+    shadowOffset: {
+      width: 0,
+      height: 0,
+    },
+    shadowOpacity: 0.16,
+    shadowRadius: 18,
+    elevation: 8,
+  },
+  playerInfoRow: {
+    flex: 1,
+    width: '100%',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 16,
+    gap: 18,
+  },
+  playerSongInfo: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
   },
   playerHidden: {
     display: 'none',
   },
   miniPlayer: {
     width: '100%',
-    minHeight: 66,
+    minHeight: 82,
     backgroundColor: '#1C1C2E',
-    borderRadius: 16,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: '#393653',
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingVertical: 10,
     marginTop: 8,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 10,
+  },
+  miniPlayerArtwork: {
+    width: 54,
+    height: 54,
+    borderRadius: 12,
+    backgroundColor: '#29243B',
+  },
+  miniPlayerArtworkPlaceholder: {
+    width: 54,
+    height: 54,
+    borderRadius: 12,
+    backgroundColor: '#302448',
+    borderWidth: 1,
+    borderColor: '#51436F',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  miniPlayerArtworkIcon: {
+    color: '#A78BFA',
+    fontSize: 30,
   },
   miniPlayerInfo: {
     flex: 1,
-    marginRight: 12,
+    minWidth: 0,
+    marginRight: 2,
   },
   miniPlayerTitle: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: 'bold',
   },
   miniPlayerArtist: {
     color: '#B9B9CC',
-    fontSize: 12, 
+    fontSize: 11, 
     marginTop: 4,
   },
   miniPlayerButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: '#A78BFA',
     alignItems: 'center',
     justifyContent: 'center',
   },
   miniPlayerButtonText: {
     color: '#21152F',
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: 'bold',
   },
   miniPlayerControls: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
   miniPlayerSkipButton: {
-    width: 34,
-    height: 38,
-    borderRadius: 12,
+    width: 30,
+    height: 36,
+    borderRadius: 10,
     backgroundColor: '#302448',
     alignItems: 'center',
     justifyContent: 'center',
   },
   miniPlayerSkipButtonText: {
     color: '#E9DFFF',
-    fontSize: 17,
+    fontSize: 15,
     fontWeight: 'bold',
   },
   importMenu: {
@@ -1762,36 +2221,176 @@ const styles = StyleSheet.create({
     marginTop: 12,
     marginBottom: 8,
   },
-  libraryTabs: {
+  bottomNavigation: {
+    width: '100%',
     flexDirection: 'row',
-    backgroundColor: '#10101C',
-    borderRadius: 14,
-    padding: 4,
-    marginBottom: 14,
-  },
-  libraryTab: {
-    flex: 1,
-    paddingVertical: 10,
     alignItems: 'center',
-    borderRadius: 10,
+    justifyContent: 'space-around',
+    backgroundColor: '#1C1C2E',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#393653',
+    paddingVertical: 8,
+    marginTop: 4,
+    marginBottom: 4,
   },
-  libraryTabActive: {
-    backgroundColor: '#51436F',
+  bottomNavigationItem: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 6,
+    gap: 4,
+    borderRadius: 12,
   },
-  libraryTabText: {
+  bottomNavigationItemActive: {
+    backgroundColor: '#302448',
+  },
+  bottomNavigationIcon: {
+    color: '#A78BFA',
+    fontSize: 20,
+  },
+  bottomNavigationText: {
     color: '#B9B9CC',
-    fontSize: 13,
+    fontSize: 10,
     fontWeight: '600',
   },
-  libraryTabTextActive: {
+  favoriteTabs: {
+    flexDirection: 'row',
+    backgroundColor: '#10101C',
+    borderRadius: 12,
+    padding: 3,
+    marginTop: -4,
+    marginBottom: 14,
+  },
+  favoriteTab: {
+    flex: 1,
+    paddingVertical: 9,
+    alignItems: 'center',
+    borderRadius: 9,
+  },
+  favoriteTabActive: {
+    backgroundColor: '#51436F',
+  },
+  favoriteTabText: {
+    color: '#B9B9CC',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  favoriteTabTextActive: {
     color: '#FFFFFF',
     fontWeight: 'bold',
   },
   libraryHeader: {
+    width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    marginBottom: 14,
+    gap: 8,
+  },
+  libraryHeading: {
+    flex: 1,
+    minWidth: 0,
+  },
+  libraryHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  headerIconButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 13,
+    backgroundColor: '#29243B',
+    borderWidth: 1,
+    borderColor: '#51436F',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerIconButtonActive: {
+    backgroundColor: '#51436F',
+    borderColor: '#A78BFA',
+  },
+  headerIconText: {
+    color: '#C4B5FD',
+    fontSize: 25,
+    fontWeight: '600',
+  },
+  headerSortText: {
+    color: '#E9DFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  libraryPrimaryActions: {
+    width: '100%',
+    marginBottom: 12,
+  },
+  importButtonContainer: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  importButtonGlow: {
+    position: 'absolute',
+    width: '66%',
+    height: 52,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: '#A78BFA',
+    shadowColor: '#A78BFA',
+    shadowOpacity: 0.9,
+    shadowRadius: 14,
+    elevation: 8,
+  },
+  importPrimaryButton: {
+    width: '62%',
+    backgroundColor: '#7C3AED',
+    borderRadius: 15,
+    paddingVertical: 11,
+    paddingHorizontal: 22,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderColor: '#A78BFA',
+    shadowColor: '#7C3AED',
+    shadowOffset: {
+      width: 0,
+      height: 3,
+    },
+    shadowOpacity: 0.35,
+    shadowRadius: 9,
+    elevation: 5,
+  },
+  importPrimaryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  libraryOptionsMenu: {
+    width: '100%',
+    backgroundColor: '#29243B',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#51436F',
+    paddingHorizontal: 12,
+    marginBottom: 12,
+  },
+  libraryOption: {
+    paddingVertical: 13,
+  },
+  libraryOptionText: {
+    color: '#E9DFFF',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  libraryOptionDanger: {
+    color: '#FF9AAB',
+    fontSize: 13, 
+    fontWeight: '600',
   },
   sortButton: {
     backgroundColor: '#29243B',
@@ -1817,6 +2416,22 @@ const styles = StyleSheet.create({
     borderColor: '#51436F',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  scanDeviceButton: {
+    backgroundColor: '#29243B',
+    borderWidth: 1,
+    borderColor: '#51436F',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  scanDeviceButtonText: {
+    color: '#E9DFFF',
+    fontSize: 13,
+    fontWeight: '600',
   },
   searchToggleButtonText: {
     color: '#C4B5FD',
@@ -1856,6 +2471,53 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderBottomWidth: 1,
     borderBottomColor: '#302D46',
+  },
+  albumGridRow: {
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  albumCard: {
+    width: '48.5%',
+    backgroundColor: '#29243B',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#393653',
+    padding: 9,
+    marginBottom: 4,
+  },
+  albumCardArtwork: {
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: 12,
+    backgroundColor: '#302448',
+  },
+  albumCardArtworkFallback: {
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: 12,
+    backgroundColor: '#302448',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  albumCardInfo: {
+    paddingTop: 10,
+    paddingHorizontal: 2,
+    paddingBottom: 3,
+  },
+  albumcardName: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  albumCardArtist: {
+    color: '#C4B5FD',
+    fontSize: 12,
+    marginTop: 5,
+  },
+  albumCardCount: {
+    color: '#85859D',
+    fontSize: 11,
+    marginTop: 5,
   },
   albumRow: {
     flexDirection: 'row',
@@ -1937,66 +2599,111 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   artworkContainer: {
-    width: 210,
-    height: 210,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 18,
-    overflow: 'hidden',
+    width: 255,
+    height: 255,
     borderRadius: 24,
-    backgroundColor: '#29243B',
     borderWidth: 1,
-    borderColor: '#51436F',
-  },
-  note: {
-    color: '#A78BFA',
-    fontSize: 76,
+    borderColor: '#494064',
+    overflow: 'hidden',
   },
   artwork: {
     width: '100%',
     height: '100%',
     borderRadius: 24,
-    backgroundColor: '#29243B',
+  },
+  artworkFallback: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 24,
+    overflow: 'hidden',
+  },
+  artworkFallbackGradient: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  note: {
+    color: '#A78BFA',
+    fontSize: 76,
+    textAlign: 'center',
   },
   songTitle: {
+    width: '100%',
     color: '#FFFFFF',
-    fontSize: 21,
+    fontSize: 20,
     fontWeight: 'bold',
     textAlign: 'center',
-    marginTop: 2,
-    paddingHorizontal: 8,
   },
   songArtist: {
     color: '#C4B5FD',
     fontSize: 15,
     fontWeight: '600',
     textAlign: 'center',
-    marginTop: 6,
+    marginTop: 4,
   },
   songAlbum: {
+    width: '100%',
     color: '#85859D',
     fontSize: 12,
     textAlign: 'center',
-    marginTop: 4,
+    marginTop: 3,
+  },
+  playerProgress: {
+    width: '100%',
+    marginTop: 0,
+    paddingHorizontal: 4,
   },
   progressTime: {
     width: '100%',
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 4,
-    marginTop: 10,
+    alignItems: 'center',
+    marginBottom: 4,
   },
   progressTimeText: {
-    color: '#A78BFA',
-    fontSize: 12,
+    color: '#A5A0B8',
+    fontSize: 11,
     fontWeight: '600',
+    fontVariant: ['tabular-nums'],
   },
-  slider: {
+  progressTrack: {
     width: '100%',
-    height: 34,
-    marginTop: 0,
-    marginBottom: 2,
+    height: 8,
+    backgroundColor: '#393653',
+    borderRadius: 10,
+    position: 'relative',
+    justifyContent: 'center',
+    marginTop: 5,
+    overflow: 'visible',
+  },
+  progressFill: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    height: 8,
+    borderRadius: 10,
+  },
+  progressThumb: {
+    position: 'absolute',
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    top: -4,
+    marginLeft: -8,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 3,
+    borderColor: '#A78BFA',
+    elevation: 4,
+  },
+  progressSlider: {
+    position: 'absolute',
+    left: 0,
+    top: -16,
+    width: '100%',
+    height: 40,
+    opacity: 1,
+    zIndex: 2,
   },
   button: {
     backgroundColor: '#7C3AED',
@@ -2021,39 +2728,14 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
   },
-  secondaryActions: {
-    width: '100%',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 10,
-    marginTop: 8,
-  },
-  secondaryButton: {
-    flex: 1,
-    minHeight: 44,
-    backgroundColor: '#29243B',
-    borderWidth: 1,
-    borderColor: '#51436F',
-    paddingHorizontal: 8,
-    paddingVertical: 10,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  secondaryButtonText: {
-    color: '#E9DFFF',
-    fontSize: 12,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
   playbackControls: {
     width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-around',
-    paddingHorizontal: 2,
-    gap: 6,
-    marginTop: 8,
+    justifyContent: 'center',
+    paddingHorizontal: 0,
+    gap: 12,
+    marginTop: 14,
     marginBottom: 4,
   },
   repeatButton: {
@@ -2069,48 +2751,22 @@ const styles = StyleSheet.create({
   repeatButtonText: {
     fontSize: 25,
     color: '#C4B5FD',
+    fontWeight: '600',
+  },
+  shuffleButtonText: {
+    fontSize: 25,
+    lineHeight: 29,
+    color: '#C4B5FD',
+    fontWeight: '600',
+    textAlign: 'center',
+    includeFontPadding: false,
+    transform: [{ translateY: 2 }],
   },
   repeatButtonActive: {
     backgroundColor: '#51436F',
     borderColor: '#A78BFA'
   },
   skipButton: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: '#302448',
-    borderWidth: 1,
-    borderColor: '#51436F',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  skipButtonText: {
-    color: '#E9DFFF',
-    fontSize: 17,
-    fontWeight: 'bold',
-  },
-  playButton: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#A78BFA',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#A78BFA',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  playButtonText: {
-    color: '#21152F',
-    fontSize: 28,
-    fontWeight: 'bold',
-  },
-  favoritePlayerButton: {
     width: 42,
     height: 42,
     borderRadius: 21,
@@ -2120,12 +2776,64 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  skipButtonText: {
+    color: '#E9DFFF',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  playButton: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: '#A78BFA',
+    borderWidth: 3,
+    borderColor: '#C4B5FD',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#A78BFA',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.38,
+    shadowRadius: 10,
+    elevation: 7,
+  },
+  playButtonText: {
+    color: '#21152F',
+    fontSize: 29,
+    fontWeight: 'bold',
+  },
+  progressFavoriteRow: {
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  favoritePlayerButton: {
+    width: 44,
+    height: 38,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'flex-end',
+    marginTop: 14,
+    marginLeft: 0,
+  },
   favoritePlayerButtonText: {
     color: '#D8D5E5',
     fontSize: 25,
   },
   favoritePlayerButtonActive: {
     color: '#FF4D6D',
+  },
+  message: {
+    color: '#85859D',
+    fontSize: 12,
+    marginTop: 10,
+    textAlign: 'center',
   },
 
   footer: {
