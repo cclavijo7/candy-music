@@ -983,52 +983,54 @@ const confirmClearLibrary = () => {
 
     const saved = saveFavorites(updatedFavorites);
 
-    if (saved) {
-      setFavoriteSongIds(updatedFavorites);
-
-      if (isFavorite && albumSource === 'favorites' && selectedAlbum) {
-        const updatedAlbumSongs = selectedAlbum.songs.filter(
-          (song) => song.id !== songId
-        );
-
-        if (updatedAlbumSongs.length === 0) {
-          setSelectedAlbum(null);
-        } else {
-          setSelectedAlbum((currentAlbum) => {
-            if (!currentAlbum) {
-              return currentAlbum;
-            }
-
-          return {
-            ...currentAlbum,
-            songs: updatedAlbumSongs,
-          };
-        });
-      }
-    }  
-
-      if (
-        isFavorite &&
-        (
-          playbackQueueSource.current === 'favorites' ||
-          playbackQueueSource.current === 'favoriteAlbum'
-        )
-      ) {
-        playbackQueue.current = playbackQueue.current.filter(
-          (song) => song.id !== songId
-        );
-        
-        originalQueue.current = originalQueue.current.filter(
-          (song) => song.id !== songId
-        );
-
-        console.log(
-          'Canción retirada de la cola de Favoritos:',
-          songId
-        );
-      }
+    if (!saved) {
+      return;
     }
-  };
+
+    setFavoriteSongIds(updatedFavorites);
+
+    if (isFavorite && albumSource === 'favorites' && selectedAlbum) {
+      setSelectedAlbum((currentAlbum) => {
+        if (!currentAlbum) {
+          return null;
+        }
+
+      const updatedAlbumSongs = currentAlbum.songs.filter(
+        (song) => song.id !== songId
+      );
+
+      if (updatedAlbumSongs.length === 0) {
+        return null;  
+      }
+
+      return {
+        ...currentAlbum,
+        songs: updatedAlbumSongs,
+      };
+    });
+  }
+
+  if (
+    isFavorite &&
+    (
+      playbackQueueSource.current === 'favorites' ||
+      playbackQueueSource.current === 'favoriteAlbum'
+    )
+  ) {
+    playbackQueue.current = playbackQueue.current.filter(
+     (song) => song.id !== songId
+    );
+        
+    originalQueue.current = originalQueue.current.filter(
+      (song) => song.id !== songId
+    );
+
+    console.log(
+      'Canción retirada de la cola de Favoritos:',
+       songId
+    );
+  }
+};
 
   const removeSongFromLibrary = (song) => {
     Alert.alert(
@@ -1071,21 +1073,27 @@ const confirmClearLibrary = () => {
             setSongs(updatedSongs);
             setFavoriteSongIds(updatedFavorites);
 
-            if (selectedAlbum) {
-              setSelectedAlbum((currentAlbum) => {
-                if (!currentAlbum) {
-                  return currentAlbum;
-                }
+            // Actualizar el álbum abierto.
+            setSelectedAlbum((currentAlbum) => {
+              if (!currentAlbum) {
+                return null;
+              }
 
-                return {
-                  ...currentAlbum,
-                  songs: currentAlbum.songs.filter(
-                    (item) => item.id !== song.id
-                  ),
-                };
-              });
-            }
+              const remainingSongs = currentAlbum.songs.filter(
+                (item) => item.id !== song.id
+              );
 
+              if (remainingSongs.length === 0) {
+                return null;
+              }
+
+              return {
+                ...currentAlbum,
+                songs: remainingSongs,
+              };
+            });
+
+            // Actualizar las colas de reproducción.
             playbackQueue.current = playbackQueue.current.filter(
               (item) => item.id !== song.id
             );
@@ -1094,16 +1102,14 @@ const confirmClearLibrary = () => {
               (item) => item.id !== song.id
             );
 
+            // Detener la reproducción si quitamos la canción actual.
             if(currentSongId === song.id) {
               player.pause();
 
-              // Cancelar culaquier reproducción automática pendiente.
               pendingAutoPlay.current = false;
               waitingForLoad.current = false;
               waitingForUnload.current = false;
 
-              // Evitar que un evento de finalización anterior.
-              // provoque un cambio inesperado de canción.
               finishHandled.current =  true;
 
               setSongTitle(null);
@@ -1159,12 +1165,14 @@ const confirmClearLibrary = () => {
                   'Error',
                   'No se pudo eliminar el álbum. Tu biblioteca se ha conservado.'
                 );
+
                 return;
               }
 
               setSongs(updatedSongs);
               setFavoriteSongIds(updatedFavorites);
 
+              // Retirar las canciones del álbum de las colas.
               playbackQueue.current = playbackQueue.current.filter(
                 (song) => !albumSongIdsSet.has(song.id)
               );
@@ -1173,15 +1181,14 @@ const confirmClearLibrary = () => {
                 (song) => !albumSongIdsSet.has(song.id)
               );
 
+              // Detener la reproducción si la canción actual pertenece al álbum.
               if (albumSongIdsSet.has(currentSongId)) {
                 player.pause();
 
-                // Cancelar cualquier reproducción automática pendiente.
                 pendingAutoPlay.current = false;
                 waitingForLoad.current = false;
                 waitingForUnload.current = false;
 
-                // Evitar cambios inesperados por eventos anteriores.
                 finishHandled.current = true;
 
                 setCurrentSongId(null);
@@ -1191,8 +1198,16 @@ const confirmClearLibrary = () => {
                 console.log('Reproducción pendiente cancelada.');
               }
 
+              // Cerrar el detalle si corresponde al álbum eliminado.
+              setSelectedAlbum((currentAlbum) => {
+                if (currentAlbum?.id === album.id) {
+                  return null;
+                }
+
+                return currentAlbum;
+              });  
+
               if (selectedAlbum?.id === album.id) {
-                setSelectedAlbum(null);
                 setAlbumSource('albums');
               }
 
@@ -1726,8 +1741,8 @@ const confirmClearLibrary = () => {
                 accessibilityRole="button"
                 accessibilityLabel={
                   sortOrder === 'asc'
-                    ? 'Order de Z a A'
-                    : 'Order de A a Z'
+                    ? 'Ordenar de Z a A'
+                    : 'Ordenar de A a Z'
                 }
               >
                 <Text style={styles.headerSortText}>
