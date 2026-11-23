@@ -114,9 +114,21 @@ export default function App() {
   const [shuffleEnabled, setShuffleEnabled] = useState(false);
 
   const artworkScale = useRef(new Animated.Value(1)).current;
+  const vinylRotation = useRef(new Animated.Value(0)).current;
+  const lastVinylSongId = useRef(null);
+
+  const vinylRotate = vinylRotation.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
+
   // Animaciones del botón de importación.
   const importButtonScale = useRef(new Animated.Value(1)).current;
   const importButtonGlow = useRef(new Animated.Value(0)).current;
+
+   // Animaciones del botón de reproducir álbum.
+  const albumPlayScale = useRef(new Animated.Value(1)).current;
+  const albumPlayGrow = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (!status.playing) {
@@ -203,6 +215,45 @@ export default function App() {
 
   const currentSong = songs.find((song) => song.id === currentSongId);
   
+  useEffect(() => {
+    if (!status.playing || currentSong?.artwork || !currentSongId) {
+      vinylRotation.stopAnimation();
+      
+      if (currentSong?.artwork || !currentSongId) {
+        lastVinylSongId.current = null;
+      }
+
+      return;
+    }
+    
+    // Reiniciar la rotación únicamente cuando cambia la canción.
+    if (lastVinylSongId.current !== currentSongId) {
+      vinylRotation.stopAnimation();
+      vinylRotation.setValue(0);
+      lastVinylSongId.current = currentSongId;
+    }
+
+    const rotationAnimation = Animated.loop(
+      Animated.timing(vinylRotation, {
+        toValue: 1,
+        duration: 8000,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+
+    rotationAnimation.start();
+
+    return () => {
+      rotationAnimation.stop();
+    };
+  }, [
+    status.playing,
+    currentSong?.artwork,
+    currentSongId,
+    vinylRotation,
+  ]);
+
   // Calcular el progresp de reproducción.
   const progressDuration = status.duration || 0;
   
@@ -849,6 +900,38 @@ const confirmClearLibrary = () => {
     ]).start();
   };
 
+  const animateAlbumPlayButtonIn = () => {
+    Animated.parallel([
+      Animated.spring(albumPlayScale, {
+        toValue: 0.96,
+        useNativeDriver: true,
+      }),
+
+      Animated.timing(albumPlayGrow, {
+        toValue: 1,
+        duration: 100,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
+
+  const animateAlbumPlayButtonOut = () => {
+    Animated.parallel([
+      Animated.spring(albumPlayScale, {
+        toValue: 1,
+        friction: 4,
+        tension: 100,
+        useNativeDriver: true,
+      }),
+
+      Animated.timing(albumPlayGrow, {
+        toValue: 0,
+        duration: 250,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
+
   const openAlbum = (album) => {
     setAlbumSource(
       selectedLibrary === 'favorites' ? 'favorites' : 'albums'
@@ -1038,160 +1121,421 @@ const confirmClearLibrary = () => {
     );
   };
 
-  const removeAlbumFromLibrary = (album) => {
-    Alert.alert(
-      'Eliminar álbum',
-      `¿Quieres eliminar "${album.name}" de tu biblioteca y de tus favoritos? Las canciones originales permanecerán en tu teléfono.`,
-      [
-        {
-          text: 'Cancelar',
-          style: 'cancel',
-        },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: () => {
-            const albumSongIds = album.songs.map((song) => song.id);
-            const albumSongIdsSet = new Set(albumSongIds);
-
-            const updatedSongs = songs.filter(
-              (song) => !albumSongIdsSet.has(song.id)
-            );
-
-            const updatedFavorites = favoriteSongIds.filter(
-              (songId) => !albumSongIdsSet.has(songId)
-            );
-
-            const librarySaved = saveLibrary(updatedSongs);
-            const favoritesSaved = saveFavorites(updatedFavorites);
-
-            if (!librarySaved || !favoritesSaved) {
-              const libraryRestored = saveLibrary(songs);
-              const favoriteRestored = saveFavorites(favoriteSongIds);
-
-              console.log('Biblioteca restaurada:', libraryRestored);
-              console.log('Favoritos restaurados:', favoriteRestored);
-
-              Alert.alert(
-                'Error',
-                'No se pudo eliminar el álbum. Tu biblioteca se ha conservado.'
-              );
-              return;
-            }
-
-            setSongs(updatedSongs);
-            setFavoriteSongIds(updatedFavorites);
-
-            playbackQueue.current = playbackQueue.current.filter(
-              (song) => !albumSongIdsSet.has(song.id)
-            );
-
-            originalQueue.current = originalQueue.current.filter(
-              (song) => !albumSongIdsSet.has(song.id)
-            );
-
-            if (albumSongIdsSet.has(currentSongId)) {
-              player.pause();
-
-              // Cancelar cualquier reproducción automática pendiente.
-              pendingAutoPlay.current = false;
-              waitingForLoad.current = false;
-              waitingForUnload.current = false;
-
-              // Evitar cambios inesperados por eventos anteriores.
-              finishHandled.current = true;
-
-              setCurrentSongId(null);
-              setSongTitle(null);
-              setSliderPosition(null);
-
-              console.log('Reproducción pendiente cancelada.');
-            }
-
-            if (selectedAlbum?.id === album.id) {
-              setSelectedAlbum(null);
-              setAlbumSource('albums');
-            }
-
-            console.log(
-              `Álbum eliminado: ${album.name}. Archivo de audio conservado.`
-            );
+    const removeAlbumFromLibrary = (album) => {
+      Alert.alert(
+        'Eliminar álbum',
+        `¿Quieres eliminar "${album.name}" de tu biblioteca y de tus favoritos? Las canciones originales permanecerán en tu teléfono.`,
+        [
+          {
+            text: 'Cancelar',
+            style: 'cancel',
           },
-        },
-      ]
-    );
-  };
+          {
+            text: 'Eliminar',
+            style: 'destructive',
+            onPress: () => {
+              const albumSongIds = album.songs.map((song) => song.id);
+              const albumSongIdsSet = new Set(albumSongIds);
 
-  return (
-    <SafeAreaProvider>
-      <SafeAreaView
-        style={styles.container}
-        edges={['top', 'right', 'bottom', 'left']}
-    >
+              const updatedSongs = songs.filter(
+                (song) => !albumSongIdsSet.has(song.id)
+              );
 
-      <KeyboardAvoidingView
-        style={{ flex: 1, width: '100%' }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={0}
+              const updatedFavorites = favoriteSongIds.filter(
+                (songId) => !albumSongIdsSet.has(songId)
+              );
+
+              const librarySaved = saveLibrary(updatedSongs);
+              const favoritesSaved = saveFavorites(updatedFavorites);
+
+              if (!librarySaved || !favoritesSaved) {
+                const libraryRestored = saveLibrary(songs);
+                const favoriteRestored = saveFavorites(favoriteSongIds);
+
+                console.log('Biblioteca restaurada:', libraryRestored);
+                console.log('Favoritos restaurados:', favoriteRestored);
+
+                Alert.alert(
+                  'Error',
+                  'No se pudo eliminar el álbum. Tu biblioteca se ha conservado.'
+                );
+                return;
+              }
+
+              setSongs(updatedSongs);
+              setFavoriteSongIds(updatedFavorites);
+
+              playbackQueue.current = playbackQueue.current.filter(
+                (song) => !albumSongIdsSet.has(song.id)
+              );
+
+              originalQueue.current = originalQueue.current.filter(
+                (song) => !albumSongIdsSet.has(song.id)
+              );
+
+              if (albumSongIdsSet.has(currentSongId)) {
+                player.pause();
+
+                // Cancelar cualquier reproducción automática pendiente.
+                pendingAutoPlay.current = false;
+                waitingForLoad.current = false;
+                waitingForUnload.current = false;
+
+                // Evitar cambios inesperados por eventos anteriores.
+                finishHandled.current = true;
+
+                setCurrentSongId(null);
+                setSongTitle(null);
+                setSliderPosition(null);
+
+                console.log('Reproducción pendiente cancelada.');
+              }
+
+              if (selectedAlbum?.id === album.id) {
+                setSelectedAlbum(null);
+                setAlbumSource('albums');
+              }
+
+              console.log(
+                `Álbum eliminado: ${album.name}. Archivo de audio conservado.`
+              );
+            },
+          },
+        ]
+      );
+    };
+
+    return (
+      <SafeAreaProvider>
+        <SafeAreaView
+          style={styles.container}
+          edges={['top', 'right', 'bottom', 'left']}
       >
 
-      <StatusBar style="light" />
+        <KeyboardAvoidingView
+          style={{ flex: 1, width: '100%' }}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={0}
+        >
 
-      <View style={{
-         display: keyboardVisible ? 'none' : 'flex',
-         flex: activeScreen === 'player' ? 1 : 0,
-        }}
-      >
+        <StatusBar style="light" />
 
-      <View style={styles.header}>
-        <Text style={styles.title}>CANDY MUSIC</Text>
-        <Text style={styles.subtitle}>Tu música, a tu manera.</Text>
-      </View>
+        <View style={{
+          display: keyboardVisible ? 'none' : 'flex',
+          flex: activeScreen === 'player' ? 1 : 0,
+          }}
+        >
 
-      {showMiniPlayer && (
-        <View style={styles.miniPlayer}>
-          {currentSong?.artwork ? (
-            <Image
-              source={{ uri: currentSong.artwork }}
-              style={styles.miniPlayerArtwork}
-              resizeMode="cover"
-            />
-          ) : (
-            <View style={styles.miniPlayerArtworkPlaceholder}>
-              <Text style={styles.miniPlayerArtworkIcon}>♫</Text>
-            </View>      
-          )}
+        <View style={styles.header}>
+          <Text style={styles.title}>CANDY MUSIC</Text>
+          <Text style={styles.subtitle}>Tu música, a tu manera.</Text>
+        </View>
 
-          <Pressable
-             style={styles.miniPlayerInfo}
-             onPress={() => setActiveScreen('player')}
-             accessibilityRole="button"
-             accessibilityLabel="Abrir reproductor completo"
-          >  
-            <Text style={styles.miniPlayerTitle} numberOfLines={1}>
-              {currentSong?.name || songTitle || 'Candy Music'}
-            </Text>
+        {showMiniPlayer && (
+          <View style={styles.miniPlayer}>
+            {currentSong?.artwork ? (
+              <Image
+                source={{ uri: currentSong.artwork }}
+                style={styles.miniPlayerArtwork}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={styles.miniPlayerArtworkPlaceholder}>
+                <Animated.View 
+                  style={[
+                    styles.miniVinylDisc,
+                    {
+                      transform: [{ rotate: vinylRotate }],
+                    },
+                  ]}
+                >    
+                  <View style={styles.miniVinylGrooveOuter} />
+                  <View style={styles.miniVinylGrooveMiddle} />
+                  <View style={styles.miniVinylLabel}>
+                    <Ionicons
+                      name="musical-notes"
+                      size={10}
+                      color="#21152F"
+                    />  
+                  </View>
+                </Animated.View>
+              </View> 
+            )}
 
-            <Text style={styles.miniPlayerArtist} numberOfLines={1}>
-              {currentSong?.artist || 'Tu música, a tu manera'}
-            </Text>
-          </Pressable>
-
-          <View style={styles.miniPlayerControls}>
             <Pressable
-              style={styles.miniPlayerSkipButton}
-              onPress={playPreviousSong} 
-              disabled={playbackQueue.current.length === 0}
+              style={styles.miniPlayerInfo}
+              onPress={() => setActiveScreen('player')}
+              accessibilityRole="button"
+              accessibilityLabel="Abrir reproductor completo"
+            >  
+              <Text style={styles.miniPlayerTitle} numberOfLines={1}>
+                {currentSong?.name || songTitle || 'Candy Music'}
+              </Text>
+
+              <Text style={styles.miniPlayerArtist} numberOfLines={1}>
+                {currentSong?.artist || 'Tu música, a tu manera'}
+              </Text>
+            </Pressable>
+
+            <View style={styles.miniPlayerControls}>
+              <Pressable
+                style={styles.miniPlayerSkipButton}
+                onPress={playPreviousSong} 
+                disabled={playbackQueue.current.length === 0}
+                accessibilityRole="button"
+                accessibilityLabel="Canción anterior"
+              >
+                <Ionicons
+                  name="play-skip-back"
+                  size={18}
+                  color="#E9DFFF"
+                />  
+              </Pressable>
+
+              <Pressable
+                style={styles.miniPlayerButton}
+                onPress={() => {
+                  if (!currentSong) {
+                    return;
+                  }
+
+                  if (status.playing) {
+                    player.pause();
+                  } else {
+                    player.play();
+                  }
+                }}
+                disabled={!currentSongId}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  status.playing ? 'Pausar canción' : 'Reproducir canción'
+                }
+              >
+                <Ionicons
+                  name={status.playing ? 'pause' : 'play'}
+                  size={21}
+                  color="#21152F"
+                />
+              </Pressable>
+
+              <Pressable  
+                style={styles.miniPlayerSkipButton}
+                onPress={playNextSong}   
+                disabled={playbackQueue.current.length === 0}
+                accessibilityRole="button"
+                accessibilityLabel="Canción siguiente"
+              >
+                <Ionicons
+                  name="play-skip-forward"
+                  size={18}
+                  color="#E9DFFF"
+                />  
+              </Pressable>
+            </View>    
+          </View>
+        )}
+
+        {activeScreen === 'player' && (
+        <View style={styles.player}>
+          
+          {/* ZONA 1: PORTADA E INFORMACIÓN */}
+          <View style={styles.playerInfoRow}>
+            <View style={styles.artworkContainer}>
+              {currentSong?.artwork ? (
+                <Animated.Image
+                  source={{ uri: currentSong.artwork }}
+                  style={[
+                    styles.artwork,
+                    {
+                      transform: [{ scale: artworkScale }],
+                    },
+                  ]}  
+                  resizeMode="cover"
+                />
+              ) : (
+                <Animated.View
+                  style={[
+                    styles.artworkFallback,
+                    {
+                      transform: [{ scale: artworkScale }],
+                    },
+                  ]}
+                >
+                  <LinearGradient
+                    colors={['#55358A', '#30204F', '#19172B']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.artworkFallbackGradient}
+                  >
+                    <Animated.View
+                      style={[
+                        styles.vinylDisc,
+                        {
+                          transform: [{ rotate: vinylRotate }],
+                        },
+                      ]}
+                    >
+                      <View style={styles.vinylGrooveOuter} />
+                      <View style={styles.vinylGrooveMiddle} />
+                      <View style={styles.vinylGrooveInner} />
+
+                      <LinearGradient
+                        colors={['#A78BFA', '#7046B8', '#493078']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={styles.vinylLabel}
+                      >
+                        <Ionicons
+                          name="musical-notes"
+                          size={42}
+                          color="#F0E7FF"
+                        />
+                      </LinearGradient>
+                    </Animated.View>        
+                  </LinearGradient>  
+                </Animated.View>  
+              )}
+            </View>
+
+            <View style={styles.playerSongInfo}>  
+              <View style={styles.playerTrackDetails}>
+                <Text style={styles.songTitle} numberOfLines={1}>
+                  {songTitle || 'Elige una canción'}
+                </Text>
+
+                <Text style={styles.songArtist} numberOfLines={1}>
+                  {currentSong?.artist || 'Artista desconocido'}
+                </Text>
+
+                {currentSong?.album ? (
+                    <Text style={styles.songAlbum} numberOfLines={1}>
+                      {currentSong.album}
+                    </Text>
+                ) : null}
+              </View>
+
+              <Pressable
+                style={styles.favoritePlayerButton}
+                onPress={() =>{
+                  if (currentSongId) toggleFavorite(currentSongId);
+                }}
+                disabled={!currentSongId}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  favoriteSongIds.includes(currentSongId)
+                    ? 'Quitar canción de favoritos'
+                    : 'Agregar canción a favoritos'
+                }
+              >
+                <Ionicons
+                  name={
+                    favoriteSongIds.includes(currentSongId)
+                      ? 'heart'
+                      : 'heart-outline'
+                  }
+                  size={25}
+                  color={
+                    favoriteSongIds.includes(currentSongId)
+                      ? '#FF4D6D'
+                      : '#D8D5E5'
+                  }
+                />  
+              </Pressable>  
+            </View>  
+          </View>
+
+          {/* ZONA 2: BARRA DE PROGRESO */}    
+          <View style={styles.playerProgress}>  
+            <View style={styles.progressTime}>  
+              <Text style={styles.progressTimeText}>
+                {currentSongId ? formatTime(status.currentTime) : '0:00'}
+              </Text>  
+
+              <Text style={styles.progressTimeText}>
+                {currentSongId ? formatTime(status.duration) : '0:00'}
+              </Text>  
+            </View>
+
+            <View style={styles.progressTrack}>
+              <LinearGradient
+                colors={['#7C3AED', '#A78BFA', '#C4B5FD']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={[
+                  styles.progressFill,
+                  { width: `${progressPercent}%`},
+                ]}
+              />
+
+            <View
+              style={[
+                styles.progressThumb,
+                { left: `${progressPercent}%` },
+              ]}
+            />      
+
+            <Slider
+              style={styles.progressSlider}
+              minimumValue={0}
+              maximumValue={progressDuration > 0 ? progressDuration : 1}
+              value={progressValue}
+              minimumTrackTintColor="transparent"
+              maximumTrackTintColor="transparent"
+              thumbTintColor="transparent"
+              onValueChange={(value) => setSliderPosition(value)}
+              onSlidingComplete={async (value) => {
+                if (!currentSongId) return;
+
+                await player.seekTo(value);
+                setSliderPosition(null);
+              }}
+            />
+          </View>  
+        </View>
+
+          {/* ZONA 3: CONTROLES */}
+          <View style={styles.playbackControls}>
+
+            {/* SHUFFLE */}
+            <Pressable
+              style={[
+                styles.repeatButton,
+                shuffleEnabled && styles.repeatButtonActive,
+              ]}
+              onPress={toggleShuffle}
+              accessibilityRole="button"
+              accessibilityLabel={
+                shuffleEnabled
+                  ? 'Desactivar reproducción aleatoria'
+                  : 'Activar reproducción aleatoria'
+              }
+            >
+              <Ionicons
+                name="shuffle"
+                size={22}
+                color={shuffleEnabled ? '#FFFFFF' : '#B9A9D5'}
+              />  
+            </Pressable>
+
+            {/* CANCIÓN ANTERIOR*/ }
+            <Pressable
+              style={styles.skipButton}
+              onPress={playPreviousSong}
               accessibilityRole="button"
               accessibilityLabel="Canción anterior"
             >
-              <Text style={styles.miniPlayerSkipButtonText}>⏮</Text>
+              <Ionicons
+                name="play-skip-back"
+                size={23}
+                color="#FFFFFF"
+              />  
             </Pressable>
 
+            {/* REPRODUCIR / PAUSAR */}
             <Pressable
-              style={styles.miniPlayerButton}
-              onPress={() => {
-                if (!currentSong) {
+              style={styles.playButton}
+              onPress={() =>{
+                if (!currentSongId) {
                   return;
                 }
 
@@ -1207,1675 +1551,2014 @@ const confirmClearLibrary = () => {
                 status.playing ? 'Pausar canción' : 'Reproducir canción'
               }
             >
-              <Text style={styles.miniPlayerButtonText}>
-                {status.playing ? '⏸' : '▶'}
-              </Text>
+              <Ionicons
+                name={status.playing ? 'pause' : 'play'}
+                size={29}
+                color="#FFFFFF"
+              />
             </Pressable>
 
-            <Pressable  
-              style={styles.miniPlayerSkipButton}
-              onPress={playNextSong}   
-              disabled={playbackQueue.current.length === 0}
+            {/* CANCIÓN SIGUIENTE */}
+            <Pressable
+              style={styles.skipButton}
+              onPress={playNextSong}
               accessibilityRole="button"
               accessibilityLabel="Canción siguiente"
             >
-              <Text style={styles.miniPlayerSkipButtonText}>⏭</Text>
+                <Ionicons
+                  name="play-skip-forward"
+                  size={23}
+                  color="#FFFFFF"
+                />  
             </Pressable>
-          </View>    
-        </View>
-      )}
 
-      {activeScreen === 'player' && (
-      <View style={styles.player}>
-        
-        {/* ZONA 1: PORTADA E INFORMACIÓN */}
-        <View style={styles.playerInfoRow}>
-          <View style={styles.artworkContainer}>
-            {currentSong?.artwork ? (
-              <Animated.Image
-                source={{ uri: currentSong.artwork }}
-                style={[
-                  styles.artwork,
-                  {
-                    transform: [{ scale: artworkScale }],
-                  },
-                ]}  
-                resizeMode="cover"
-              />
-            ) : (
-              <Animated.View
-                style={[
-                  styles.artworkFallback,
-                  {
-                    transform: [{ scale: artworkScale }],
-                  },
-                ]}
-              >
-                <LinearGradient
-                  colors={['#55358A', '#30204F', '#19172B']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.artworkFallbackGradient}
-                >
-                  <Ionicons
-                    name="musical-notes"
-                    size={88}
-                    color="#D8C5FF"
-                  />
-                </LinearGradient>  
-              </Animated.View>  
-            )}
-          </View>
-
-          <View style={styles.playerSongInfo}>  
-            <Text style={styles.songTitle} numberOfLines={1}>
-              {songTitle || 'Elige una canción'}
-            </Text>
-
-            <Text style={styles.songArtist} numberOfLines={1}>
-              {currentSong?.artist || 'Artista desconocido'}
-            </Text>
-
-            {currentSong?.album ? (
-                <Text style={styles.songAlbum} numberOfLines={2}>
-                  {currentSong.album}
-                </Text>
-            ) : null}
-
+            {/* REPETIR */}  
             <Pressable
-              style={styles.favoritePlayerButton}
-              onPress={() =>{
-                if (currentSongId) toggleFavorite(currentSongId);
+              style={[
+                styles.repeatButton,
+              repeatEnabled && styles.repeatButtonActive
+            ]}
+              onPress={() => {
+                const newRepeatValue = !repeatEnabled;
+
+                console.log('Botón repetición pulsado', newRepeatValue);
+                setRepeatEnabled(newRepeatValue);
               }}
-              disabled={!currentSongId}
               accessibilityRole="button"
               accessibilityLabel={
-                favoriteSongIds.includes(currentSongId)
-                  ? 'Quitar canción de favoritos'
-                  : 'Agregar canción a favoritos'
+                repeatEnabled ? 'Desactivar repetición' : 'Activar repetición'
               }
             >
               <Ionicons
-                name={
-                  favoriteSongIds.includes(currentSongId)
-                    ? 'heart'
-                    : 'heart-outline'
-                }
-                size={25}
-                color={
-                  favoriteSongIds.includes(currentSongId)
-                    ? '#FF4D6D'
-                    : '#D8D5E5'
-                }
-                style={{ transform: [{ translateX: 1 }] }}
+                name="repeat"
+                size={22}
+                color={repeatEnabled ? '#FFFFFF' : '#B9A9D5'}
               />  
-            </Pressable>  
-          </View>  
-        </View>
+            </Pressable>
 
-        {/* ZONA 2: BARRA DE PROGRESO */}    
-        <View style={styles.playerProgress}>  
-          <View style={styles.progressTime}>  
-            <Text style={styles.progressTimeText}>
-              {currentSongId ? formatTime(status.currentTime) : '0:00'}
-            </Text>  
-
-            <Text style={styles.progressTimeText}>
-              {currentSongId ? formatTime(status.duration) : '0:00'}
-            </Text>  
           </View>
-
-          <View style={styles.progressTrack}>
-            <LinearGradient
-              colors={['#7C3AED', '#A78BFA', '#C4B5FD']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={[
-                styles.progressFill,
-                { width: `${progressPercent}%`},
-              ]}
-            />
-
-          <View
-            style={[
-              styles.progressThumb,
-              { left: `${progressPercent}%` },
-            ]}
-          />      
-
-          <Slider
-            style={styles.progressSlider}
-            minimumValue={0}
-            maximumValue={progressDuration > 0 ? progressDuration : 1}
-            value={progressValue}
-            minimumTrackTintColor="transparent"
-            maximumTrackTintColor="transparent"
-            thumbTintColor="transparent"
-            onValueChange={(value) => setSliderPosition(value)}
-            onSlidingComplete={async (value) => {
-              if (!currentSongId) return;
-
-              await player.seekTo(value);
-              setSliderPosition(null);
-            }}
-          />
+        </View>
+        )}
         </View>  
-      </View>
+        
+        {importMenuVisible && (
+          <View style={styles.importMenu}>
+            <Text style={styles.libraryTitle}>
+              De dónde quieres importar tu música?
+            </Text>
 
-        {/* ZONA 3: CONTROLES */}
-        <View style={styles.playbackControls}>
-
-          {/* SHUFFLE */}
-          <Pressable
-            style={[
-              styles.repeatButton,
-              shuffleEnabled && styles.repeatButtonActive,
-            ]}
-            onPress={toggleShuffle}
-            accessibilityRole="button"
-            accessibilityLabel={
-              shuffleEnabled
-                ? 'Desactivar reproducción aleatoria'
-                : 'Activar reproducción aleatoria'
-            }
-          >
-            <Ionicons
-              name="shuffle"
-              size={22}
-              color={shuffleEnabled ? '#FFFFFF' : '#B9A9D5'}
-            />  
-          </Pressable>
-
-          {/* CANCIÓN ANTERIOR*/ }
-          <Pressable
-            style={styles.skipButton}
-            onPress={playPreviousSong}
-            accessibilityRole="button"
-            accessibilityLabel="Canción anterior"
-          >
-            <Ionicons
-              name="play-skip-back"
-              size={23}
-              color="#FFFFFF"
-            />  
-          </Pressable>
-
-          {/* REPRODUCIR / PAUSAR */}
-          <Pressable
-            style={styles.playButton}
-            onPress={() =>{
-              if (status.playing) {
-                player.pause();
-              } else {
-                player.play();
-              }
-            }}
-            accessibilityRole="button"
-            accessibilityLabel={
-              status.playing ? 'Pausar canción' : 'Reproducir canción'
-            }
-          >
-            <Ionicons
-              name={status.playing ? 'pause' : 'play'}
-              size={29}
-              color="#FFFFFF"
-            />
-          </Pressable>
-
-          {/* CANCIÓN SIGUIENTE */}
-           <Pressable
-            style={styles.skipButton}
-            onPress={playNextSong}
-            accessibilityRole="button"
-            accessibilityLabel="Canción siguiente"
-          >
-              <Ionicons
-                name="play-skip-forward"
-                size={23}
-                color="#FFFFFF"
-              />  
-          </Pressable>
-
-          {/* REPETIR */}  
-          <Pressable
-            style={[
-              styles.repeatButton,
-            repeatEnabled && styles.repeatButtonActive
-          ]}
-            onPress={() => {
-              const newRepeatValue = !repeatEnabled;
-
-              console.log('Botón repetición pulsado', newRepeatValue);
-              setRepeatEnabled(newRepeatValue);
-            }}
-            accessibilityRole="button"
-            accessibilityLabel={
-              repeatEnabled ? 'Desactivar repetición' : 'Activar repetición'
-            }
-          >
-            <Ionicons
-              name="repeat"
-              size={22}
-              color={repeatEnabled ? '#FFFFFF' : '#B9A9D5'}
-            />  
-          </Pressable>
-
-        </View>
-      </View>
-      )}
-      </View>  
-      
-      {importMenuVisible && (
-        <View style={styles.importMenu}>
-          <Text style={styles.libraryTitle}>
-            De dónde quieres importar tu música?
-          </Text>
-
-          <Pressable
-            style={styles.button}
-            onPress={() => {
-              setImportMenuVisible(false);
-              pickSong();
-            }}
-          >
-            <Text style={styles.buttonText}>📂 Archivos</Text>
-          </Pressable>
-
-          <Pressable
-            style={styles.button}
-            onPress={() => setImportMenuVisible(false)}
-          >
-            <Text style={styles.buttonText}>Cancelar</Text>
-          </Pressable>
-        </View>
-      )}
-
-      {activeScreen !== 'player' && (
-      <View style={styles.library}>
-
-        {selectedLibrary === 'favorites' && !selectedAlbum && (
-          <View style={styles.favoriteTabs}>
             <Pressable
-              style={[
-                styles.favoriteTab,
-                selectedLibraryView === 'songs' &&
-                  styles.favoriteTabActive,
-              ]}
-              onPress={() => setSelectedLibraryView('songs')}
+              style={styles.button}
+              onPress={() => {
+                setImportMenuVisible(false);
+                pickSong();
+              }}
             >
-              <Text
-                style={[
-                  styles.favoriteTabText,
-                  selectedLibraryView === 'songs' &&
-                    styles.favoriteTabTextActive,
-                ]}
-              >
-                ♫ Canciones
-              </Text>  
+              <Text style={styles.buttonText}>📂 Archivos</Text>
             </Pressable>
 
             <Pressable
-              style={[
-                styles.favoriteTab,
-                selectedLibraryView === 'albums' &&
-                  styles.favoriteTabActive,
-              ]}
-                onPress={() => setSelectedLibraryView('albums')}
+              style={styles.button}
+              onPress={() => setImportMenuVisible(false)}
             >
-              <Text
-                style={[
-                  styles.favoriteTabText,
-                  selectedLibraryView === 'albums' &&
-                    styles.favoriteTabTextActive,
-                ]}
-              >
-                ◉ Álbumes
-              </Text>  
-            </Pressable> 
-          </View>       
+              <Text style={styles.buttonText}>Cancelar</Text>
+            </Pressable>
+          </View>
         )}
 
-        <View style={styles.libraryHeader}>
-          <View style={styles.libraryHeading}>
-            <Text style={styles.libraryTitle}>
-              {selectedLibrary === 'favorites'
-                ? selectedLibraryView === 'albums'
-                  ? 'Álbumes favoritos'
-                  : 'Mis canciones favoritas'
-                : selectedLibraryView === 'albums'
-                  ? 'Álbumes'
-                  : 'Mi biblioteca'}
-            </Text>
+        {activeScreen !== 'player' && (
+        <View style={styles.library}>
 
-            <Text style={styles.libraryCount}>
-              {selectedLibrary === 'favorites'
-                ? selectedLibraryView === 'albums'
-                  ? `${favoriteAlbums.length} ${favoriteAlbums.length === 1 ? 'álbum favorito' : 'álbumes favoritos'}`
-                  : `${favoriteSongs.length} ${favoriteSongs.length === 1 ? 'canción favorita' : 'canciones favoritas'}`
-                : selectedLibraryView === 'albums'
-                    ? `${albums.length} ${albums.length === 1 ? 'álbum' : 'álbumes'}`
-                    : `${songs.length} ${songs.length === 1 ? 'canción' : 'canciones'}`}
-            </Text>
-          </View>
-
-          <View style={styles.libraryHeaderActions}>      
-            <Pressable
-              style={styles.headerIconButton}
-              onPress={() => {
-                if (searchVisible) {
-                  setSearchVisible(false);
-                  setSearchQuery('');
-                  Keyboard.dismiss();
-                } else {
-                  setSearchVisible(true);
-                }
-              }}
-              accessibilityRole="button"
-              accessibilityLabel={
-                searchVisible ? 'Cerrar búsqueda' : 'Abrir búsqueda'
-              }
-            >
-              <Text style={styles.headerIconText}>
-                {searchVisible ? 'x' : '⌕'}
-              </Text>
-            </Pressable>
-
-            <Pressable
-              style={styles.headerIconButton}
-              onPress={() => {
-                setSortOrder((currentOrder) =>
-                  currentOrder === 'asc' ? 'desc' : 'asc'
-                );
-              }}
-              accessibilityRole="button"
-              accessibilityLabel={
-                sortOrder === 'asc'
-                  ? 'Order de Z a A'
-                  : 'Order de A a Z'
-              }
-            >
-              <Text style={styles.headerSortText}>
-                {sortOrder === 'asc' ? 'A-Z' : 'Z-A'}
-              </Text>
-            </Pressable>  
-
-            {activeScreen === 'library' && (
+          {selectedLibrary === 'favorites' && !selectedAlbum && (
+            <View style={styles.favoriteTabs}>
               <Pressable
                 style={[
-                  styles.headerIconButton,
-                  libraryOptionsVisible && styles.headerIconButtonActive,
-                ]}  
-                onPress={() =>
-                  setLibraryOptionsVisible((visible) => !visible)
-                }  
-                accessibilityRole="button"
-                accessibilityLabel="Más opciones de biblioteca"
-              >
-                <Text style={styles.headerIconText}>...</Text>
-              </Pressable>  
-            )}
-          </View>
-        </View>
-
-        {activeScreen === 'library' && (
-          <View style={styles.libraryPrimaryActions}>
-            <Animated.View            
-              style={[
-                styles.importButtonContainer,
-                {
-                  transform: [{ scale: importButtonScale }],
-                },
-              ]}  
-            >
-              <Animated.View
-                pointerEvents="none"
-                style={[
-                  styles.importButtonGlow,
-                  {
-                    opacity: importButtonGlow,
-                    transform: [
-                      {
-                        scale: importButtonGlow.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [0.96, 1.08],
-                        }),
-                      },
-                    ],
-                  },
+                  styles.favoriteTab,
+                  selectedLibraryView === 'songs' &&
+                    styles.favoriteTabActive,
                 ]}
-              />
-
-              <Pressable
-                style={styles.importPrimaryButton}
-                onPress={openImportMenu}
-                onPressIn={animateImportButtonIn}
-                onPressOut={animateImportButtonOut}
-                accessibilityRole="button"
-                accessibilityLabel="Importar música"
+                onPress={() => setSelectedLibraryView('songs')}
               >
-                <Ionicons
-                  name="musical-notes"
-                  size={19}
-                  color="#FFFFFF"
-                />
-
-                <Text style={styles.importPrimaryButtonText}>
-                  Importar música
+                <Text
+                  style={[
+                    styles.favoriteTabText,
+                    selectedLibraryView === 'songs' &&
+                      styles.favoriteTabTextActive,
+                  ]}
+                >
+                  ♫ Canciones
                 </Text>  
               </Pressable>
-            </Animated.View>
-          </View>       
-        )}
-        
-        {activeScreen === 'library' && libraryOptionsVisible && (
-          <View style={styles.libraryOptionsMenu}>
 
-            {selectedLibrary === 'all' &&
-              selectedLibraryView === 'songs' &&(
-                <Pressable
-                  style={styles.libraryOption}
-                  onPress={confirmClearLibrary}
-                  accessibilityRole="button"
-                  accessibilityLabel="Limpiar biblioteca"
-                >
-                  <Text style={styles.libraryOptionDanger}>
-                    Limpiar biblioteca
-                  </Text>   
-                </Pressable>  
-              )}
-          </View>        
-        )}
-            
-        {searchVisible && (  
-          <TextInput
-            style={styles.searchInput}
-            placeholder={
-              selectedLibraryView === 'albums'
-                ? 'Buscar álbum, artista o canción...'
-                : 'Buscar una canción...'
-            }    
-            placeholderTextColor='#85859D'
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />  
-        )}
-         {selectedAlbum ? (
-            <View style={{ flex: 1, width: '100%' }}>
-              {/* Boton para regresar */}
               <Pressable
-                onPress={closeAlbum}
-                style={{
-                  paddingVertical: 12,
-                  marginBottom: 12,
+                style={[
+                  styles.favoriteTab,
+                  selectedLibraryView === 'albums' &&
+                    styles.favoriteTabActive,
+                ]}
+                  onPress={() => setSelectedLibraryView('albums')}
+              >
+                <Text
+                  style={[
+                    styles.favoriteTabText,
+                    selectedLibraryView === 'albums' &&
+                      styles.favoriteTabTextActive,
+                  ]}
+                >
+                  ◉ Álbumes
+                </Text>  
+              </Pressable> 
+            </View>       
+          )}
+
+          <View style={styles.libraryHeader}>
+            <View style={styles.libraryHeading}>
+              <Text style={styles.libraryTitle}>
+                {selectedLibrary === 'favorites'
+                  ? selectedLibraryView === 'albums'
+                    ? 'Álbumes favoritos'
+                    : 'Mis canciones favoritas'
+                  : selectedLibraryView === 'albums'
+                    ? 'Álbumes'
+                    : 'Mi biblioteca'}
+              </Text>
+
+              <Text style={styles.libraryCount}>
+                {selectedLibrary === 'favorites'
+                  ? selectedLibraryView === 'albums'
+                    ? `${favoriteAlbums.length} ${favoriteAlbums.length === 1 ? 'álbum favorito' : 'álbumes favoritos'}`
+                    : `${favoriteSongs.length} ${favoriteSongs.length === 1 ? 'canción favorita' : 'canciones favoritas'}`
+                  : selectedLibraryView === 'albums'
+                      ? `${albums.length} ${albums.length === 1 ? 'álbum' : 'álbumes'}`
+                      : `${songs.length} ${songs.length === 1 ? 'canción' : 'canciones'}`}
+              </Text>
+            </View>
+
+            <View style={styles.libraryHeaderActions}>      
+              <Pressable
+                style={styles.headerIconButton}
+                onPress={() => {
+                  if (searchVisible) {
+                    setSearchVisible(false);
+                    setSearchQuery('');
+                    Keyboard.dismiss();
+                  } else {
+                    setSearchVisible(true);
+                  }
                 }}
                 accessibilityRole="button"
                 accessibilityLabel={
-                  albumSource === 'favorites'
-                    ? "Regresar a favoritos"
-                    : 'Regresar a los álbumes'
-                }    
-             >
-              <Text 
-                style={{ 
-                  color: '#A78BFA', 
-                  fontSize: 16, 
-                  fontWeight: '600' 
-                }}
+                  searchVisible ? 'Cerrar búsqueda' : 'Abrir búsqueda'
+                }
               >
-                {albumSource === 'favorites'
-                  ? '← Volver a favoritos'
-                  : '← Volver a los álbumes'}
-              </Text>
-             </Pressable>
-
-             {/* Información del álbum */}
-             <View style={{ alignItems: 'center', marginBottom: 24 }}>
-              {selectedAlbum.artwork ? (
-                <Image
-                  source={{ uri: selectedAlbum.artwork }}
-                  style={{
-                    width: 190,
-                    height: 190,
-                    borderRadius: 12,
-                    marginBottom: 18,
-                  }}
-                  resizeMode="cover"
-                />
-                ) : (
-                  <View 
-                    style={{
-                      width: 190,
-                      height: 190,
-                      borderRadius: 12,
-                      backgroundColor: '#1C1C2E',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      marginBottom: 18,
-                    }}
-                  >
-                    <Text style={{ color: '#A78BFA', fontSize: 64 }}>
-                      ♫
-                    </Text>
-                  </View>     
-                )}
-
-                <Text
-                  style={{
-                    color: '#FFFFFF',
-                    fontSize: 22,
-                    fontWeight: '700',
-                    textAlign: 'center',
-                  }}
-                >
-                  {selectedAlbum.name}
+                <Text style={styles.headerIconText}>
+                  {searchVisible ? 'x' : '⌕'}
                 </Text>
+              </Pressable>
 
-                <Text 
-                  style={{
-                    color: '#A78BFA',
-                    fontSize: 15,
-                    marginTop: 6,
-                    textAlign: 'center',
-                  }}
-                >
-                  {selectedAlbum.artist}
+              <Pressable
+                style={styles.headerIconButton}
+                onPress={() => {
+                  setSortOrder((currentOrder) =>
+                    currentOrder === 'asc' ? 'desc' : 'asc'
+                  );
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  sortOrder === 'asc'
+                    ? 'Order de Z a A'
+                    : 'Order de A a Z'
+                }
+              >
+                <Text style={styles.headerSortText}>
+                  {sortOrder === 'asc' ? 'A-Z' : 'Z-A'}
                 </Text>
+              </Pressable>  
 
-                <Text
-                  style={{
-                    color: '#85859D',
-                    fontSize: 13,
-                    marginTop: 8,
-                  }}
-                >
-                  {selectedAlbum.songs.length}{' '}
-                  {albumSource === 'favorites'
-                    ? selectedAlbum.songs.length === 1 
-                      ? 'favorita'
-                      : 'favoritas'
-                    : selectedAlbum.songs.length === 1
-                      ? 'canción' 
-                      : 'canciones'}
-                </Text>  
-              </View>
-
-              {/* Botón para eliminar el álbum completo */}
-              {albumSource === 'albums' && (
+              {activeScreen === 'library' && (
                 <Pressable
-                  onPress={() => removeAlbumFromLibrary(selectedAlbum)}
-                  style={{
-                    backgroundColor: '#302448',
-                    borderWidth: 1,
-                    borderColor: '#A78BFA',
-                    borderRadius: 12,
-                    paddingVertical: 12,
-                    alignItems: 'center',
-                    marginBottom: 16,
-                  }}
+                  style={[
+                    styles.headerIconButton,
+                    libraryOptionsVisible && styles.headerIconButtonActive,
+                  ]}  
+                  onPress={() =>
+                    setLibraryOptionsVisible((visible) => !visible)
+                  }  
                   accessibilityRole="button"
-                  accessibilityLabel="Eliminar álbum completo"
+                  accessibilityLabel="Más opciones de biblioteca"
                 >
-                  <Text 
-                    style={{
-                      color: '#E9DFFF',
-                      fontSize: 14,
-                      fontWeight: '600',
-                    }}
-                  >
-                    🗑 Eliminar álbum completo
-                  </Text>  
+                  <Text style={styles.headerIconText}>...</Text>
                 </Pressable>  
               )}
+            </View>
+          </View>
 
-              {/* Lista de canciones del album */}
+          {activeScreen === 'library' && (
+            <View style={styles.libraryPrimaryActions}>
+              <Animated.View            
+                style={[
+                  styles.importButtonContainer,
+                  {
+                    transform: [{ scale: importButtonScale }],
+                  },
+                ]}  
+              >
+                <Animated.View
+                  pointerEvents="none"
+                  style={[
+                    styles.importButtonGlow,
+                    {
+                      opacity: importButtonGlow,
+                      transform: [
+                        {
+                          scale: importButtonGlow.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [0.96, 1.08],
+                          }),
+                        },
+                      ],
+                    },
+                  ]}
+                />
+
+                <Pressable
+                  style={styles.importPrimaryButton}
+                  onPress={openImportMenu}
+                  onPressIn={animateImportButtonIn}
+                  onPressOut={animateImportButtonOut}
+                  accessibilityRole="button"
+                  accessibilityLabel="Importar música"
+                >
+                  <Ionicons
+                    name="musical-notes"
+                    size={19}
+                    color="#FFFFFF"
+                  />
+
+                  <Text style={styles.importPrimaryButtonText}>
+                    Importar música
+                  </Text>  
+                </Pressable>
+              </Animated.View>
+            </View>       
+          )}
+          
+          {activeScreen === 'library' && 
+            libraryOptionsVisible && 
+            selectedLibrary === 'all' && 
+            selectedLibraryView === 'songs' &&
+            (songs.length > 0 || favoriteSongIds.length > 0) && (
+            <View style={styles.libraryOptionsMenu}>
+                  <Pressable
+                    style={styles.libraryOption}
+                    onPress={confirmClearLibrary}
+                    accessibilityRole="button"
+                    accessibilityLabel="Limpiar biblioteca"
+                    accessibilityHint="Quitar las canciones y favoritos de Candy Music, sin borrar los archivos del teléfono" 
+                  >
+                    <View style={styles.libraryOptionIcon}>
+                      <Ionicons
+                        name="trash-outline"
+                        size={19}
+                        color="#FF9AAB"
+                      />  
+                    </View>
+
+                    <View style={styles.libraryOptionInfo}>
+                      <Text style={styles.libraryOptionDanger}>
+                        Limpiar biblioteca
+                      </Text>
+
+                      <Text style={styles.libraryOptionDescription}>
+                        Quitar todas las canciones y favoritos
+                      </Text>
+                    </View>
+
+                    <Ionicons
+                      name="chevron-forward"
+                      size={18}
+                      color="#85859D" 
+                    />   
+                  </Pressable>  
+            </View>        
+          )}
+              
+          {searchVisible && (  
+            <TextInput
+              style={styles.searchInput}
+              placeholder={
+                selectedLibraryView === 'albums'
+                  ? 'Buscar álbum, artista o canción...'
+                  : 'Buscar una canción...'
+              }    
+              placeholderTextColor='#85859D'
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />  
+          )}
+          {selectedAlbum ? (
+              <View style={styles.albumDetailContainer}>
+
+                {/* BOTÓN PARA REGRESAR */}
+                <Pressable
+                  onPress={closeAlbum}
+                  style={styles.albumBackButton}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    albumSource === 'favorites'
+                      ? "Regresar a favoritos"
+                      : 'Regresar a los álbumes'
+                  }    
+                >
+                  <Ionicons
+                    name="chevron-back"
+                    size={20}
+                    color="#C4B5FD"
+                  />
+
+                  <Text style={styles.albumBackText}>
+                    {albumSource === 'favorites'
+                      ? 'Volver a favoritos'
+                      : 'Volver a los álbumes'}
+                  </Text>
+                </Pressable>
+
+              {/* INFORMACIÓN Y ACCIONES DEL ÁLBUM */}
+              <View style={styles.albumDetailHeader}>
+
+                {/* PORTADA */}      
+                {selectedAlbum.artwork ? (
+                  <Image
+                    source={{ uri: selectedAlbum.artwork }}
+                    style={styles.albumDetailArtwork}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={styles.albumDetailArtworkFallback}>
+                    <LinearGradient
+                      colors={['#55358A', '#30204F', '#19172B']}
+                      style={styles.albumDetailArtworkGradient}
+                    >
+                      <Ionicons
+                        name="musical-notes"
+                        size={30}
+                        color="#C4B5FD"
+                      />  
+                    </LinearGradient>
+                  </View>        
+                )}
+
+                {/* INFOMACION */}
+                <View style={styles.albumDetailInfo}>     
+                  <Text
+                    style={styles.albumDetailName}
+                    numberOfLines={2}
+                  >
+                    {selectedAlbum.name}
+                  </Text>
+
+                  <Text
+                    style={styles.albumDetailArtist}
+                    numberOfLines={1}
+                  >
+                    {selectedAlbum.artist}
+                  </Text>
+
+                  <Text style={styles.albumDetailCount}>             
+                    {selectedAlbum.songs.length}{' '}
+                    {albumSource === 'favorites'
+                      ? selectedAlbum.songs.length === 1 
+                        ? 'canción favorita'
+                        : 'canciones favoritas'
+                      : selectedAlbum.songs.length === 1
+                        ? 'canción' 
+                        : 'canciones'}
+                  </Text>  
+                </View>   
+                
+                {/* BOTON A LA DERECHA */}
+                <View style={styles.albumDetailActions}>
+
+                <Animated.View
+                      style={[
+                        styles.albumPlayButtonContainer,
+                        {
+                          transform: [{ scale: albumPlayScale }],
+                        },
+                      ]}
+                >
+                  <Animated.View
+                    pointerEvents="none"
+                    style={[
+                      styles.albumPlayButtonGlow,
+                      {
+                        opacity: albumPlayGrow,
+                        transform: [
+                          {
+                            scale: albumPlayGrow.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: [0.96, 1.08],
+                            }),
+                          },
+                        ],
+                      },
+                    ]}
+                  />
+
+                  <Pressable
+                    style={[
+                      styles.albumPlayButton,
+                      selectedAlbum.songs.length === 0 &&
+                        styles.albumPlayButtonDisabled,
+                    ]}
+                    disabled={selectedAlbum.songs.length === 0}
+                    onPressIn={animateAlbumPlayButtonIn}
+                    onPressOut={animateAlbumPlayButtonOut}
+                    onPress={() => {
+                      const firstSong = selectedAlbum.songs[0];
+
+                      if (!firstSong) {
+                        return;
+                      }
+
+                      playSong(
+                        firstSong,
+                        true,
+                        selectedAlbum.songs,
+                        albumSource === 'favorites'
+                          ? 'favoriteAlbum'
+                          : 'album'
+                      );
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Reproducir álbum completo"
+                  >
+                    <Ionicons
+                      name="play"
+                      size={20}
+                      color="#FFFFFF"
+                    />  
+                  </Pressable>    
+                </Animated.View>
+
+                {albumSource === 'albums' && (
+                  <Pressable
+                    onPress={() => removeAlbumFromLibrary(selectedAlbum)}
+                    style={styles.albumDeleteButton}
+                    accessibilityRole="button"
+                    accessibilityLabel="Eliminar álbum completo"
+                  >
+                    <Ionicons
+                      name="trash-outline"
+                      size={20}
+                      color="#FF9AAB"
+                    />  
+                  </Pressable>  
+                )}
+
+              </View>
+            </View>    
+
+                {/* ENCABEZADO DE LA LISTA */}
+                <View style={styles.albumSongsHeader}>
+                  <Text style={styles.albumSongsTitle}>
+                    Canciones
+                  </Text>
+
+                  <Text style={styles.albumSongsCount}>
+                    {selectedAlbum.songs.length}
+                  </Text>
+                </View>  
+
+                {/* LISTA DE CANCIONES */}
+                <FlatList
+                  style={styles.albumSongsList}
+                  data={selectedAlbum.songs}
+                  keyExtractor={(song) => song.id}
+                  keyboardShouldPersistTaps="handled"
+                  renderItem={({ item }) => {
+                    const isCurrentSong = item.id === currentSongId;
+
+                    return (
+                      <View style={styles.songRow}>  
+                        <Pressable
+                          style={[
+                            styles.songItem,
+                            styles.albumSongItem,
+                            isCurrentSong && styles.songItemActive,
+                            { flex: 1 },
+                          ]}
+                          onPress={() => 
+                            playSong(
+                              item,
+                              true, 
+                              selectedAlbum.songs,
+                              albumSource === 'favorites' 
+                                ? 'favoriteAlbum' 
+                                : 'album'
+                            )
+                          }
+                          accessibilityRole="button"
+                          accessibilityLabel={`Reproducir ${item.name}`}
+                        >  
+                          {item.artwork ? (
+                            <Image
+                              source={{ uri: item.artwork }}
+                              style={styles.albumSongArtwork}
+                              resizeMode="cover"
+                            />  
+                          ) : (
+                            <View style={styles.albumSongArtworkFallback}>
+                              <View style={styles.songVinylDisc}>
+                                <View style={styles.songVinylGroove} />
+                                <View style={styles.songVinylLabel}>
+                                  <Ionicons
+                                    name="musical-notes"
+                                    size={10}
+                                    color="#21152F"
+                                  />  
+                                </View>
+                              </View>
+                            </View>
+                          )}
+
+                          <View style={styles.songItemInfo}>
+                            <Text
+                              style={[
+                                styles.albumSongName,
+                                isCurrentSong && styles.songItemTextActive,
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {item.name}
+                            </Text>
+
+                            <Text
+                              style={styles.albumSongArtist}
+                              numberOfLines={1}
+                            >
+                              {item.artist || 'Artista desconocido'}
+                            </Text>    
+                          </View>
+                        </Pressable>
+
+                        <Pressable
+                          style={styles.removeSongButton}
+                          onPress={() => {
+                            if (albumSource === 'favorites') {
+                              toggleFavorite(item.id);
+                            } else {
+                              removeSongFromLibrary(item);
+                            }
+                          }}
+                          accessibilityRole="button"
+                          accessibilityLabel={
+                            albumSource === 'favorites'
+                              ? 'Quitar canción de favoritos'
+                              : 'Quitar canción de la biblioteca'
+                          }
+                        >
+                          <Ionicons
+                            name={
+                              albumSource === 'favorites'
+                                ? "heart-dislike-outline"
+                                : "trash-outline"
+                            }    
+                            size={19}
+                            color="#A78BFA"
+                          />  
+                        </Pressable>
+                      </View>
+                    );
+                  }}        
+                  ListEmptyComponent={
+                    <Text style={styles.emptyText}>
+                      Este álbum todavía no tiene canciones.
+                    </Text>
+                  }
+                />
+              </View>
+            ) : (
+
               <FlatList
-                data={selectedAlbum.songs}
-                keyExtractor={(song) => song.id}
+                key={selectedLibraryView === 'albums' ? 'albums-grid' : 'songs-list'}
+                style={{ flex: 1 }}
+                numColumns={selectedLibraryView === 'albums' ? 2 : 1}
+                columnWrapperStyle={
+                  selectedLibraryView === 'albums'
+                    ? styles.albumGridRow
+                    : undefined
+                }
+                data={
+                  selectedLibrary === 'favorites' 
+                    ? selectedLibraryView === 'albums'
+                      ? displayedFavoriteAlbums
+                      : displayedSongs
+                    : selectedLibraryView === 'albums'
+                      ? displayedAlbums
+                      : displayedSongs 
+                }
                 keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag"
+                keyExtractor={(item) => item.id}
                 renderItem={({ item }) => {
+                  if (selectedLibraryView === 'albums') {
+                    return (
+                      <Pressable
+                        style={styles.albumCard}
+                        onPress={() => openAlbum(item)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Abrir álbum ${item.name}`}
+                      >
+                        {item.artwork ? (
+                          <Image
+                            source={{ uri: item.artwork }}
+                            style={styles.albumCardArtwork}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <View style={styles.albumCardArtworkFallback}>
+                            <Text style={styles.albumArtworkNote}>♫</Text>
+                          </View>
+                        )}  
+
+                          <View style={styles.albumCardInfo}>
+                            <Text 
+                              style={styles.albumcardName} 
+                              numberOfLines={2}
+                            >
+                              {item.name}
+                            </Text>
+
+                            <Text 
+                              style={styles.albumCardArtist} 
+                              numberOfLines={1}
+                            >
+                              {item.artist}
+                            </Text> 
+
+                            <Text style={styles.albumCardCount}>
+                              {item.songs.length}{' '}
+                              {item.songs.length === 1 
+                                ? selectedLibrary === 'favorites'
+                                  ? 'favorita'
+                                  : 'canción'
+                                : selectedLibrary === 'favorites'
+                                  ? 'favoritas'
+                                  : 'canciones'}
+                            </Text>
+                          </View>    
+                      </Pressable>    
+                    );
+                  }
+
                   const isCurrentSong = item.id === currentSongId;
 
                   return (
-                    <View style={styles.songRow}>  
+                    <View style={styles.songRow}>
                       <Pressable
                         style={[
                           styles.songItem,
                           isCurrentSong && styles.songItemActive,
-                          { flex: 1, marginBottom: 8},
+                          { flex: 1 },
                         ]}
                         onPress={() => 
                           playSong(
-                            item,
+                            item, 
                             true, 
-                            selectedAlbum.songs,
-                            albumSource === 'favorites' ? 'favoriteAlbum' : 'album'
+                            displayedSongs,
+                            selectedLibrary === 'favorites' ? 'favorites' : 'all'
                           )
                         }
                       >
-                        <Text
-                          style={[
-                            styles.songItemText,
-                            isCurrentSong && styles.songItemTextActive,
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {isCurrentSong ? '♫' : '♪'} {item.name} 
-                        </Text>  
-                      </Pressable>  
+                        {item.artwork ? (
+                          <Image
+                            source={{ uri: item.artwork }}
+                            style={styles.songArtwork}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <View style={styles.songArtworkFallback}>
+                            <View style={styles.songVinylDisc}>
+                              <View style={styles.songVinylGroove} />
+                              <View style={styles.songVinylLabel}>
+                                <Ionicons
+                                  name="musical-notes"
+                                  size={10}
+                                  color="#21152F"
+                                />  
+                              </View>
+                            </View>
+                          </View>
+                        )}
+
+                        <View style={styles.songItemInfo}>
+                          <Text
+                            style={[
+                              styles.songItemText,
+                              isCurrentSong && styles.songItemTextActive,
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {item.name}
+                          </Text>
+
+                          <Text style={styles.sonItemArtist} numberOfLines={1}>
+                            {item.artist || 'Artista desconocido'}
+                          </Text>  
+                        </View>  
+                      </Pressable>
 
                       <Pressable
                         style={styles.removeSongButton}
                         onPress={() => {
-                          if (albumSource === 'favorites') {
+                          if (selectedLibrary === 'favorites') {
                             toggleFavorite(item.id);
-                          } else {
+                          }  else {
                             removeSongFromLibrary(item);
                           }
                         }}
                         accessibilityRole="button"
                         accessibilityLabel={
-                          albumSource === 'favorites'
-                            ? 'Quitar canción de favoritos'
-                            : 'Quitar canción de la biblioteca'
+                          selectedLibrary === 'favorites'
+                          ? 'Quitar de favoritos'
+                          : 'Quitar de la biblioteca'
                         }
                       >
-                        <Text style={styles.removeSongButtonText}>X</Text>
+                        <Ionicons
+                          name={
+                            selectedLibrary === 'favorites'
+                              ? 'heart-dislike-outline'
+                              : 'trash-outline'
+                          }
+                          size={20}
+                          color="#A78BFA"
+                        />
                       </Pressable>
-                    </View>
+                    </View>      
                   );
-                }}        
+                }}
 
                 ListEmptyComponent={
                   <Text style={styles.emptyText}>
-                    Este álbum todavía no tiene canciones.
+                    {selectedLibrary === 'favorites'
+                      ? selectedLibraryView === 'albums' 
+                        ? 'Todavía no tienes álbumes favoritos.'
+                        : 'Todavía no tienes canciones favoritas.'
+                      : selectedLibraryView === 'albums'
+                          ? 'Todavía no tienes álbumes para mostrar.'
+                          : 'Importa tus canciones para verlas aquí.'}
                   </Text>
                 }
               />
+            )}  
             </View>
-          ) : (
-            <FlatList
-              key={selectedLibraryView === 'albums' ? 'albums-grid' : 'songs-list'}
-              style={{ flex: 1 }}
-              numColumns={selectedLibraryView === 'albums' ? 2 : 1}
-              columnWrapperStyle={
-                selectedLibraryView === 'albums'
-                  ? styles.albumGridRow
-                  : undefined
-              }
-              data={
-                selectedLibrary === 'favorites' 
-                  ? selectedLibraryView === 'albums'
-                    ? displayedFavoriteAlbums
-                    : displayedSongs
-                  : selectedLibraryView === 'albums'
-                    ? displayedAlbums
-                    : displayedSongs 
-              }
-              keyboardShouldPersistTaps="handled"
-              keyboardDismissMode="on-drag"
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => {
-                if (selectedLibraryView === 'albums') {
-                  return (
-                    <Pressable
-                      style={styles.albumCard}
-                      onPress={() => openAlbum(item)}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Abrir álbum ${item.name}`}
-                    >
-                      {item.artwork ? (
-                        <Image
-                          source={{ uri: item.artwork }}
-                          style={styles.albumCardArtwork}
-                          resizeMode="cover"
-                        />
-                      ) : (
-                        <View style={styles.albumCardArtworkFallback}>
-                          <Text style={styles.albumArtworkNote}>♫</Text>
-                        </View>
-                      )}  
+            )}  
 
-                        <View style={styles.albumCardInfo}>
-                          <Text style={styles.albumcardName} numberOfLines={1}>
-                            {item.name}
-                          </Text>
+            <View style={styles.bottomNavigation}>
+              <Pressable
+                style={[
+                  styles.bottomNavigationItem,
+                  activeScreen === 'player' && styles.bottomNavigationItemActive,
+                ]}
+                onPress={() => navigateTo('player')}
+                accessibilityRole="button"
+                accessibilityLabel="Ir al reproductor"
+              >
+                <Text style={styles.bottomNavigationIcon}>♫</Text>
+                <Text style={styles.bottomNavigationText}>Reproductor</Text>
+              </Pressable>
 
-                          <Text style={styles.albumCardArtist} numberOfLines={1}>
-                            {item.artist}
-                          </Text> 
+              <Pressable
+                style={[
+                  styles.bottomNavigationItem,
+                  activeScreen === 'library' && styles.bottomNavigationItemActive,
+                ]}
+                onPress={() => navigateTo('library')}
+                accessibilityRole="button"
+                accessibilityLabel="Ir a la biblioteca"
+              >
+                <Text style={styles.bottomNavigationIcon}>▤</Text>
+                <Text style={styles.bottomNavigationText}>Biblioteca</Text>
+              </Pressable>
 
-                          <Text style={styles.albumCardCount}>
-                            {item.songs.length}{' '}
-                            {item.songs.length === 1 
-                              ? selectedLibrary === 'favorites'
-                                ? 'favorita'
-                                : 'canción'
-                              : selectedLibrary === 'favorites'
-                                ? 'favoritas'
-                                : 'canciones'}
-                          </Text>
-                        </View>    
-                    </Pressable>    
-                  );
-                }
+              <Pressable
+                style={[
+                  styles.bottomNavigationItem,
+                  activeScreen === 'albums' && styles.bottomNavigationItemActive,
+                ]}
+                onPress={() => navigateTo('albums')}
+                accessibilityRole="button"
+                accessibilityLabel="Ir a álbumes"
+              >
+                <Text style={styles.bottomNavigationIcon}>▣</Text>
+                <Text style={styles.bottomNavigationText}>Álbumes</Text>
+              </Pressable>
 
-                const isCurrentSong = item.id === currentSongId;
+              <Pressable
+                style={[
+                  styles.bottomNavigationItem,
+                  activeScreen === 'favorites' && styles.bottomNavigationItemActive,
+                ]}
+                onPress={() => navigateTo('favorites')}
+                accessibilityRole="button"
+                accessibilityLabel="Ir a favoritos"
+              >
+                <Text style={styles.bottomNavigationIcon}>♥</Text>
+                <Text style={styles.bottomNavigationText}>Favoritos</Text>
+              </Pressable>
+            </View>
 
-                return (
-                  <View style={styles.songRow}>
-                    <Pressable
-                      style={[
-                        styles.songItem,
-                        isCurrentSong && styles.songItemActive,
-                        { flex: 1 },
-                      ]}
-                      onPress={() => 
-                        playSong(
-                          item, 
-                          true, 
-                          displayedSongs,
-                          selectedLibrary === 'favorites' ? 'favorites' : 'all'
-                        )
-                      }
-                    >
-                      <Text
-                        style={[
-                          styles.songItemText,
-                          isCurrentSong && styles.songItemTextActive,
-                        ]}
-                        numberOfLines={1}
-                      >
-                        {isCurrentSong ? '♫' : '♪'} {item.name}
-                      </Text>    
-                    </Pressable>
-
-                    <Pressable
-                      style={styles.removeSongButton}
-                      onPress={() => {
-                        if (selectedLibrary === 'favorites') {
-                          toggleFavorite(item.id);
-                        }  else {
-                          removeSongFromLibrary(item);
-                        }
-                      }}
-                      accessibilityRole="button"
-                      accessibilityLabel={
-                        selectedLibrary === 'favorites'
-                        ? 'Quitar de favoritos'
-                        : 'Quitar de la biblioteca'
-                      }
-                    >
-                      <Text style={styles.removeSongButtonText}>X</Text>
-                    </Pressable>
-                  </View>      
-                );
-              }}
-              ListEmptyComponent={
-                <Text style={styles.emptyText}>
-                  {selectedLibrary === 'favorites'
-                    ? selectedLibraryView === 'albums' 
-                      ? 'Todavía no tienes álbumes favoritos.'
-                      : 'Todavía no tienes canciones favoritas.'
-                    : selectedLibraryView === 'albums'
-                        ? 'Todavía no tienes álbumes para mostrar.'
-                        : 'Importa tus canciones para verlas aquí.'}
-                </Text>
-              }
-            />
-          )}  
-          </View>
-          )}  
-
-          <View style={styles.bottomNavigation}>
-            <Pressable
-              style={[
-                styles.bottomNavigationItem,
-                activeScreen === 'player' && styles.bottomNavigationItemActive,
-              ]}
-              onPress={() => navigateTo('player')}
-              accessibilityRole="button"
-              accessibilityLabel="Ir al reproductor"
-            >
-              <Text style={styles.bottomNavigationIcon}>♫</Text>
-              <Text style={styles.bottomNavigationText}>Reproductor</Text>
-            </Pressable>
-
-            <Pressable
-              style={[
-                styles.bottomNavigationItem,
-                activeScreen === 'library' && styles.bottomNavigationItemActive,
-              ]}
-              onPress={() => navigateTo('library')}
-              accessibilityRole="button"
-              accessibilityLabel="Ir a la biblioteca"
-            >
-              <Text style={styles.bottomNavigationIcon}>▤</Text>
-              <Text style={styles.bottomNavigationText}>Biblioteca</Text>
-            </Pressable>
-
-            <Pressable
-              style={[
-                styles.bottomNavigationItem,
-                activeScreen === 'albums' && styles.bottomNavigationItemActive,
-              ]}
-              onPress={() => navigateTo('albums')}
-              accessibilityRole="button"
-              accessibilityLabel="Ir a álbumes"
-            >
-              <Text style={styles.bottomNavigationIcon}>▣</Text>
-              <Text style={styles.bottomNavigationText}>Álbumes</Text>
-            </Pressable>
-
-            <Pressable
-              style={[
-                styles.bottomNavigationItem,
-                activeScreen === 'favorites' && styles.bottomNavigationItemActive,
-              ]}
-              onPress={() => navigateTo('favorites')}
-              accessibilityRole="button"
-              accessibilityLabel="Ir a favoritos"
-            >
-              <Text style={styles.bottomNavigationIcon}>♥</Text>
-              <Text style={styles.bottomNavigationText}>Favoritos</Text>
-            </Pressable>
-          </View>
-
-        <Text style={styles.footer}> TU MÚSICA. TU MOMENTO</Text>
-      </KeyboardAvoidingView>  
-    </SafeAreaView>
-  </SafeAreaProvider>
-  );
-}
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#10101C',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 6,
-  },
-  header: {
-    width: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  title: {
-    color: '#A78BFA',
-    fontSize: 26,
-    fontWeight: 'bold',
-    letterSpacing: 3,
-  },
-  subtitle: {
-    color: '#D1D1E0',
-    fontSize: 16,
-    marginTop: 4,
-    marginBottom: 12,
-  },
-  player: {
-    flex: 1,
-    width: '100%',
-    backgroundColor: '#211B32',
-    borderRadius: 26,
-    paddingHorizontal: 16,
-    paddingVertical: 18,
-    borderWidth: 1,
-    borderColor: '#494064',
-    shadowColor: '#8B5CF6',
-    shadowOffset: {
-      width: 0,
-      height: 0,
-    },
-    shadowOpacity: 0.16,
-    shadowRadius: 18,
-    elevation: 8,
-  },
-  playerInfoRow: {
-    flex: 1,
-    width: '100%',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 16,
-    gap: 18,
-  },
-  playerSongInfo: {
-    width: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 8,
-  },
-  playerHidden: {
-    display: 'none',
-  },
-  miniPlayer: {
-    width: '100%',
-    minHeight: 82,
-    backgroundColor: '#1C1C2E',
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#393653',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginTop: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 10,
-  },
-  miniPlayerArtwork: {
-    width: 54,
-    height: 54,
-    borderRadius: 12,
-    backgroundColor: '#29243B',
-  },
-  miniPlayerArtworkPlaceholder: {
-    width: 54,
-    height: 54,
-    borderRadius: 12,
-    backgroundColor: '#302448',
-    borderWidth: 1,
-    borderColor: '#51436F',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  miniPlayerArtworkIcon: {
-    color: '#A78BFA',
-    fontSize: 30,
-  },
-  miniPlayerInfo: {
-    flex: 1,
-    minWidth: 0,
-    marginRight: 2,
-  },
-  miniPlayerTitle: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: 'bold',
-  },
-  miniPlayerArtist: {
-    color: '#B9B9CC',
-    fontSize: 11, 
-    marginTop: 4,
-  },
-  miniPlayerButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#A78BFA',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  miniPlayerButtonText: {
-    color: '#21152F',
-    fontSize: 19,
-    fontWeight: 'bold',
-  },
-  miniPlayerControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  miniPlayerSkipButton: {
-    width: 30,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: '#302448',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  miniPlayerSkipButtonText: {
-    color: '#E9DFFF',
-    fontSize: 15,
-    fontWeight: 'bold',
-  },
-  importMenu: {
-    width: '90%',
-    maxWidth: 400,
-    alignSelf: 'center',
-    backgroundColor: '#1C1C2E',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#A78BFA',
-    padding: 16,
-    marginTop: 12,
-    alignItems: 'stretch',
-  },
-  library: {
-    flex: 1,
-    minHeight: 100,
-    width: '100%',
-    backgroundColor: '#1C1C2E',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#393653',
-    padding: 12,
-    marginTop: 12,
-    marginBottom: 8,
-  },
-  bottomNavigation: {
-    width: '100%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    backgroundColor: '#1C1C2E',
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#393653',
-    paddingVertical: 8,
-    marginTop: 4,
-    marginBottom: 4,
-  },
-  bottomNavigationItem: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 6,
-    gap: 4,
-    borderRadius: 12,
-  },
-  bottomNavigationItemActive: {
-    backgroundColor: '#302448',
-  },
-  bottomNavigationIcon: {
-    color: '#A78BFA',
-    fontSize: 20,
-  },
-  bottomNavigationText: {
-    color: '#B9B9CC',
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  favoriteTabs: {
-    flexDirection: 'row',
-    backgroundColor: '#10101C',
-    borderRadius: 12,
-    padding: 3,
-    marginTop: -4,
-    marginBottom: 14,
-  },
-  favoriteTab: {
-    flex: 1,
-    paddingVertical: 9,
-    alignItems: 'center',
-    borderRadius: 9,
-  },
-  favoriteTabActive: {
-    backgroundColor: '#51436F',
-  },
-  favoriteTabText: {
-    color: '#B9B9CC',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  favoriteTabTextActive: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-  },
-  libraryHeader: {
-    width: '100%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 14,
-    gap: 8,
-  },
-  libraryHeading: {
-    flex: 1,
-    minWidth: 0,
-  },
-  libraryHeaderActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-  },
-  headerIconButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 13,
-    backgroundColor: '#29243B',
-    borderWidth: 1,
-    borderColor: '#51436F',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerIconButtonActive: {
-    backgroundColor: '#51436F',
-    borderColor: '#A78BFA',
-  },
-  headerIconText: {
-    color: '#C4B5FD',
-    fontSize: 25,
-    fontWeight: '600',
-  },
-  headerSortText: {
-    color: '#E9DFFF',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  libraryPrimaryActions: {
-    width: '100%',
-    marginBottom: 12,
-  },
-  importButtonContainer: {
-    width: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-  },
-  importButtonGlow: {
-    position: 'absolute',
-    width: '66%',
-    height: 52,
-    borderRadius: 20,
-    borderWidth: 2,
-    borderColor: '#A78BFA',
-    shadowColor: '#A78BFA',
-    shadowOpacity: 0.9,
-    shadowRadius: 14,
-    elevation: 8,
-  },
-  importPrimaryButton: {
-    width: '62%',
-    backgroundColor: '#7C3AED',
-    borderRadius: 15,
-    paddingVertical: 11,
-    paddingHorizontal: 22,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    borderWidth: 1,
-    borderColor: '#A78BFA',
-    shadowColor: '#7C3AED',
-    shadowOffset: {
-      width: 0,
-      height: 3,
-    },
-    shadowOpacity: 0.35,
-    shadowRadius: 9,
-    elevation: 5,
-  },
-  importPrimaryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
-    letterSpacing: 0.3,
-  },
-  libraryOptionsMenu: {
-    width: '100%',
-    backgroundColor: '#29243B',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#51436F',
-    paddingHorizontal: 12,
-    marginBottom: 12,
-  },
-  libraryOption: {
-    paddingVertical: 13,
-  },
-  libraryOptionText: {
-    color: '#E9DFFF',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  libraryOptionDanger: {
-    color: '#FF9AAB',
-    fontSize: 13, 
-    fontWeight: '600',
-  },
-  sortButton: {
-    backgroundColor: '#29243B',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#51436F',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sortButtonText: {
-    color: '#E9DFFF',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  searchToggleButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: '#29243B',
-    borderWidth: 1,
-    borderColor: '#51436F',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  scanDeviceButton: {
-    backgroundColor: '#29243B',
-    borderWidth: 1,
-    borderColor: '#51436F',
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-  },
-  scanDeviceButtonText: {
-    color: '#E9DFFF',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  searchToggleButtonText: {
-    color: '#C4B5FD',
-    fontSize: 25,
-    fontWeight: '600',
-  },
-  searchInput: {
-    backgroundColor: '#10101C',
-    borderWidth: 1,
-    borderColor: '#51436F',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    color: '#FFFFFF',
-    fontSize: 14,
-    marginBottom: 10,
-  },
-  clearLibraryButtonText: {
-    color: '#E9DFFF',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  libraryTitle: {
-    color: '#A78BFA',
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 0,
-  },
-  libraryCount: {
-    color: '#85859D',
-    fontSize: 11,
-    marginTop: 3,
-    fontWeight: '500',
-  },
-  songRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: '#302D46',
-  },
-  albumGridRow: {
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  albumCard: {
-    width: '48.5%',
-    backgroundColor: '#29243B',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#393653',
-    padding: 9,
-    marginBottom: 4,
-  },
-  albumCardArtwork: {
-    width: '100%',
-    aspectRatio: 1,
-    borderRadius: 12,
-    backgroundColor: '#302448',
-  },
-  albumCardArtworkFallback: {
-    width: '100%',
-    aspectRatio: 1,
-    borderRadius: 12,
-    backgroundColor: '#302448',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  albumCardInfo: {
-    paddingTop: 10,
-    paddingHorizontal: 2,
-    paddingBottom: 3,
-  },
-  albumcardName: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  albumCardArtist: {
-    color: '#C4B5FD',
-    fontSize: 12,
-    marginTop: 5,
-  },
-  albumCardCount: {
-    color: '#85859D',
-    fontSize: 11,
-    marginTop: 5,
-  },
-  albumRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 4,
-    borderBottomWidth: 1,
-    borderBottomColor: '#302D46',
-  },
-  albumArtwork: {
-    width: 64,
-    height: 64,
-    borderRadius: 10,
-    backgroundColor: '#29243B',
-  },
-  albumArtworkFallback: {
-    width: 64,
-    height: 64,
-    borderRadius: 10,
-    backgroundColor: '#302448',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  albumArtworkNote: {
-    color: '#A78BFA',
-    fontSize: 28,
-  },
-  albumInfo: {
-    flex: 1,
-    marginLeft: 12,
-    justifyContent: 'center',
-  },
-  albumName: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: 'bold',
-  },
-  albumArtist: {
-    color: '#C4B5FD',
-    fontSize: 13,
-    marginTop: 4,
-  },
-  albumSongCount: {
-    color: '#85859D',
-    fontSize: 11,
-    marginTop: 4,
-  },
-  removeSongButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  removeSongButtonText: {
-    color: '#A78BFA',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  songItem: {
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-  },
-  songItemActive: {
-    backgroundColor: '#302747',
-    borderColor: '#A78BFA',
-  },
-  songItemText: {
-    color: '#D8D5E5',
-    fontSize: 14,
-    fontWeight: '500'
-  },
-  songItemTextActive: {
-    color: '#C4B5FD',
-    fontWeight: '700',
-  },
-  emptyText: {
-    color: '#B9B9CC',
-    fontSize: 14,
-    paddingVertical: 8,
-  },
-  artworkContainer: {
-    width: 255,
-    height: 255,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: '#494064',
-    overflow: 'hidden',
-  },
-  artwork: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 24,
-  },
-  artworkFallback: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 24,
-    overflow: 'hidden',
-  },
-  artworkFallbackGradient: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  note: {
-    color: '#A78BFA',
-    fontSize: 76,
-    textAlign: 'center',
-  },
-  songTitle: {
-    width: '100%',
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: 'bold',
-    textAlign: 'center',
-  },
-  songArtist: {
-    color: '#C4B5FD',
-    fontSize: 15,
-    fontWeight: '600',
-    textAlign: 'center',
-    marginTop: 4,
-  },
-  songAlbum: {
-    width: '100%',
-    color: '#85859D',
-    fontSize: 12,
-    textAlign: 'center',
-    marginTop: 3,
-  },
-  playerProgress: {
-    width: '100%',
-    marginTop: 0,
-    paddingHorizontal: 4,
-  },
-  progressTime: {
-    width: '100%',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  progressTimeText: {
-    color: '#A5A0B8',
-    fontSize: 11,
-    fontWeight: '600',
-    fontVariant: ['tabular-nums'],
-  },
-  progressTrack: {
-    width: '100%',
-    height: 8,
-    backgroundColor: '#393653',
-    borderRadius: 10,
-    position: 'relative',
-    justifyContent: 'center',
-    marginTop: 5,
-    overflow: 'visible',
-  },
-  progressFill: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    height: 8,
-    borderRadius: 10,
-  },
-  progressThumb: {
-    position: 'absolute',
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    top: -4,
-    marginLeft: -8,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 3,
-    borderColor: '#A78BFA',
-    elevation: 4,
-  },
-  progressSlider: {
-    position: 'absolute',
-    left: 0,
-    top: -16,
-    width: '100%',
-    height: 40,
-    opacity: 1,
-    zIndex: 2,
-  },
-  button: {
-    backgroundColor: '#7C3AED',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 24,
-    marginTop: 10,
-  },
-  clearLibraryButton: {
-    backgroundColor: '#29243B',
-    paddingVertical: 9,
-    paddingHorizontal: 16,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#51436F',
-    marginTop: 0,
-    marginBottom: 10,
-  },
-  buttonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-    textAlign: 'center',
-  },
-  playbackControls: {
-    width: '100%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 0,
-    gap: 12,
-    marginTop: 14,
-    marginBottom: 4,
-  },
-  repeatButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#29243B',
-    borderWidth: 1,
-    borderColor: '#51436F',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  repeatButtonText: {
-    fontSize: 25,
-    color: '#C4B5FD',
-    fontWeight: '600',
-  },
-  shuffleButtonText: {
-    fontSize: 25,
-    lineHeight: 29,
-    color: '#C4B5FD',
-    fontWeight: '600',
-    textAlign: 'center',
-    includeFontPadding: false,
-    transform: [{ translateY: 2 }],
-  },
-  repeatButtonActive: {
-    backgroundColor: '#51436F',
-    borderColor: '#A78BFA'
-  },
-  skipButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: '#302448',
-    borderWidth: 1,
-    borderColor: '#51436F',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  skipButtonText: {
-    color: '#E9DFFF',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  playButton: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    backgroundColor: '#A78BFA',
-    borderWidth: 3,
-    borderColor: '#C4B5FD',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#A78BFA',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.38,
-    shadowRadius: 10,
-    elevation: 7,
-  },
-  playButtonText: {
-    color: '#21152F',
-    fontSize: 29,
-    fontWeight: 'bold',
-  },
-  progressFavoriteRow: {
-    width: '100%',
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  favoritePlayerButton: {
-    width: 44,
-    height: 38,
-    backgroundColor: 'transparent',
-    borderWidth: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    alignSelf: 'flex-end',
-    marginTop: 14,
-    marginLeft: 0,
-  },
-  favoritePlayerButtonText: {
-    color: '#D8D5E5',
-    fontSize: 25,
-  },
-  favoritePlayerButtonActive: {
-    color: '#FF4D6D',
-  },
-  message: {
-    color: '#85859D',
-    fontSize: 12,
-    marginTop: 10,
-    textAlign: 'center',
-  },
-
-  footer: {
-    color: '#85859D',
-    fontSize: 11,
-    letterSpacing: 2,
-    marginTop: 4,
-    textAlign: 'center',
+          <Text style={styles.footer}> TU MÚSICA. TU MOMENTO</Text>
+        </KeyboardAvoidingView>  
+      </SafeAreaView>
+    </SafeAreaProvider>
+    );
   }
-});
+
+  const styles = StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: '#10101C',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingTop: 8,
+      paddingBottom: 6,
+    },
+    header: {
+      width: '100%',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    title: {
+      color: '#A78BFA',
+      fontSize: 26,
+      fontWeight: 'bold',
+      letterSpacing: 3,
+    },
+    subtitle: {
+      color: '#D1D1E0',
+      fontSize: 16,
+      marginTop: 4,
+      marginBottom: 12,
+    },
+    player: {
+      flex: 1,
+      width: '100%',
+      backgroundColor: '#211B32',
+      borderRadius: 26,
+      paddingHorizontal: 16,
+      paddingVertical: 18,
+      borderWidth: 1,
+      borderColor: '#494064',
+      shadowColor: '#8B5CF6',
+      shadowOffset: {
+        width: 0,
+        height: 0,
+      },
+      shadowOpacity: 0.16,
+      shadowRadius: 18,
+      elevation: 8,
+    },
+    playerInfoRow: {
+      flex: 1,
+      width: '100%',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'flex-start',
+      paddingTop: 8,
+      gap: 22,
+    },
+    playerSongInfo: {
+      width: '100%',
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 8,
+      gap: 12,
+      transform: [{ translateY: 6 }],
+    },
+    playerTrackDetails: {
+      flex: 1,
+      minWidth: 0,
+      alignItems: 'flex-start',
+      justifyContent: 'center',
+    },
+    playerHidden: {
+      display: 'none',
+    },
+    miniPlayer: {
+      width: '100%',
+      minHeight: 82,
+      backgroundColor: '#1C1C2E',
+      borderRadius: 18,
+      borderWidth: 1,
+      borderColor: '#393653',
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      marginTop: 8,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 10,
+    },
+    miniPlayerArtwork: {
+      width: 54,
+      height: 54,
+      borderRadius: 12,
+      backgroundColor: '#29243B',
+    },
+    miniPlayerArtworkPlaceholder: {
+      width: 54,
+      height: 54,
+      borderRadius: 12,
+      backgroundColor: '#302448',
+      borderWidth: 1,
+      borderColor: '#51436F',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    miniVinylDisc: {
+      width: 42,
+      height: 42,
+      borderRadius: 21, 
+      backgroundColor: '#11101A',
+      borderWidth: 1, 
+      borderColor: '#51466B',
+      alignItems: 'center',
+      justifyContent: 'center',
+      overflow: 'hidden',
+    },
+    miniVinylGrooveOuter: {
+      position: 'absolute',
+      width: '84%',
+      height: '84%',
+      borderRadius: 999,
+      borderWidth: 1, 
+      borderColor: 'rgba(220, 200, 255, 0.25)',
+    },
+    miniVinylGrooveMiddle: {
+      position: 'absolute',
+      width: '62%',
+      height: '62%',
+      borderRadius: 999,
+      borderWidth: 1, 
+      borderColor: 'rgba(220, 200, 255, 0.20)',
+    },
+    miniVinylLabel: {
+      width: '34%',
+      height: '34%',
+      borderRadius: 999,
+      backgroundColor: '#A78BFA',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    miniPlayerArtworkIcon: {
+      color: '#A78BFA',
+      fontSize: 30,
+    },
+    miniPlayerInfo: {
+      flex: 1,
+      minWidth: 0,
+      marginRight: 2,
+    },
+    miniPlayerTitle: {
+      color: '#FFFFFF',
+      fontSize: 13,
+      fontWeight: 'bold',
+    },
+    miniPlayerArtist: {
+      color: '#B9B9CC',
+      fontSize: 11, 
+      marginTop: 4,
+    },
+    miniPlayerButton: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: '#A78BFA',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    miniPlayerButtonText: {
+      color: '#21152F',
+      fontSize: 19,
+      fontWeight: 'bold',
+    },
+    miniPlayerControls: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    miniPlayerSkipButton: {
+      width: 30,
+      height: 36,
+      borderRadius: 10,
+      backgroundColor: '#302448',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    miniPlayerSkipButtonText: {
+      color: '#E9DFFF',
+      fontSize: 15,
+      fontWeight: 'bold',
+    },
+    importMenu: {
+      width: '90%',
+      maxWidth: 400,
+      alignSelf: 'center',
+      backgroundColor: '#1C1C2E',
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: '#A78BFA',
+      padding: 16,
+      marginTop: 12,
+      alignItems: 'stretch',
+    },
+    library: {
+      flex: 1,
+      minHeight: 100,
+      width: '100%',
+      backgroundColor: '#1C1C2E',
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: '#393653',
+      padding: 12,
+      marginTop: 12,
+      marginBottom: 8,
+    },
+    bottomNavigation: {
+      width: '100%',
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-around',
+      backgroundColor: '#1C1C2E',
+      borderRadius: 18,
+      borderWidth: 1,
+      borderColor: '#393653',
+      paddingVertical: 8,
+      marginTop: 4,
+      marginBottom: 4,
+    },
+    bottomNavigationItem: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 6,
+      gap: 4,
+      borderRadius: 12,
+    },
+    bottomNavigationItemActive: {
+      backgroundColor: '#302448',
+    },
+    bottomNavigationIcon: {
+      color: '#A78BFA',
+      fontSize: 20,
+    },
+    bottomNavigationText: {
+      color: '#B9B9CC',
+      fontSize: 10,
+      fontWeight: '600',
+    },
+    favoriteTabs: {
+      flexDirection: 'row',
+      backgroundColor: '#10101C',
+      borderRadius: 12,
+      padding: 3,
+      marginTop: -4,
+      marginBottom: 14,
+    },
+    favoriteTab: {
+      flex: 1,
+      paddingVertical: 9,
+      alignItems: 'center',
+      borderRadius: 9,
+    },
+    favoriteTabActive: {
+      backgroundColor: '#51436F',
+    },
+    favoriteTabText: {
+      color: '#B9B9CC',
+      fontSize: 12,
+      fontWeight: '600',
+    },
+    favoriteTabTextActive: {
+      color: '#FFFFFF',
+      fontWeight: 'bold',
+    },
+    libraryHeader: {
+      width: '100%',
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 14,
+      gap: 8,
+    },
+    libraryHeading: {
+      flex: 1,
+      minWidth: 0,
+    },
+    libraryHeaderActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 7,
+    },
+    headerIconButton: {
+      width: 38,
+      height: 38,
+      borderRadius: 13,
+      backgroundColor: '#29243B',
+      borderWidth: 1,
+      borderColor: '#51436F',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    headerIconButtonActive: {
+      backgroundColor: '#51436F',
+      borderColor: '#A78BFA',
+    },
+    headerIconText: {
+      color: '#C4B5FD',
+      fontSize: 25,
+      fontWeight: '600',
+    },
+    headerSortText: {
+      color: '#E9DFFF',
+      fontSize: 11,
+      fontWeight: '700',
+    },
+    libraryPrimaryActions: {
+      width: '100%',
+      marginBottom: 12,
+    },
+    importButtonContainer: {
+      width: '100%',
+      alignItems: 'center',
+      justifyContent: 'center',
+      position: 'relative',
+    },
+    importButtonGlow: {
+      position: 'absolute',
+      width: '66%',
+      height: 52,
+      borderRadius: 20,
+      borderWidth: 2,
+      borderColor: '#A78BFA',
+      shadowColor: '#A78BFA',
+      shadowOpacity: 0.9,
+      shadowRadius: 14,
+      elevation: 8,
+    },
+    importPrimaryButton: {
+      width: '62%',
+      backgroundColor: '#7C3AED',
+      borderRadius: 15,
+      paddingVertical: 11,
+      paddingHorizontal: 22,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 10,
+      borderWidth: 1,
+      borderColor: '#A78BFA',
+      shadowColor: '#7C3AED',
+      shadowOffset: {
+        width: 0,
+        height: 3,
+      },
+      shadowOpacity: 0.35,
+      shadowRadius: 9,
+      elevation: 5,
+    },
+    importPrimaryButtonText: {
+      color: '#FFFFFF',
+      fontSize: 14,
+      fontWeight: '700',
+      letterSpacing: 0.3,
+    },
+    libraryOptionsMenu: {
+      width: '100%',
+      backgroundColor: '#29243B',
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: '#51436F',
+      paddingHorizontal: 12,
+      paddingVertical: 5,
+      marginBottom: 12,
+    },
+    libraryOption: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 11,
+      paddingVertical: 10,
+    },
+    libraryOptionIcon: {
+      width: 38,
+      height: 38,
+      borderRadius: 12, 
+      backgroundColor: '#3A263B',
+      borderWidth: 1,
+      borderColor: '#704052',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    libraryOptionInfo: {
+      flex: 1,
+      minWidth: 0,
+    },
+     libraryOptionDanger: {
+      color: '#FF9AAB',
+      fontSize: 13, 
+      fontWeight: '700',
+    },
+    libraryOptionDescription: {
+      color: '#B9B9CC',
+      fontSize: 11, 
+      marginTop: 4,
+    },
+    libraryOptionText: {
+      color: '#E9DFFF',
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    sortButton: {
+      backgroundColor: '#29243B',
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: '#51436F',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    sortButtonText: {
+      color: '#E9DFFF',
+      fontSize: 12,
+      fontWeight: '600',
+    },
+    searchToggleButton: {
+      width: 36,
+      height: 36,
+      borderRadius: 12,
+      backgroundColor: '#29243B',
+      borderWidth: 1,
+      borderColor: '#51436F',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    scanDeviceButton: {
+      backgroundColor: '#29243B',
+      borderWidth: 1,
+      borderColor: '#51436F',
+      borderRadius: 12,
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 10,
+    },
+    scanDeviceButtonText: {
+      color: '#E9DFFF',
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    searchToggleButtonText: {
+      color: '#C4B5FD',
+      fontSize: 25,
+      fontWeight: '600',
+    },
+    searchInput: {
+      backgroundColor: '#10101C',
+      borderWidth: 1,
+      borderColor: '#51436F',
+      borderRadius: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      color: '#FFFFFF',
+      fontSize: 14,
+      marginBottom: 10,
+    },
+    clearLibraryButtonText: {
+      color: '#E9DFFF',
+      fontSize: 12,
+      fontWeight: '600',
+    },
+    libraryTitle: {
+      color: '#A78BFA',
+      fontSize: 18,
+      fontWeight: 'bold',
+      marginBottom: 0,
+    },
+    libraryCount: {
+      color: '#85859D',
+      fontSize: 11,
+      marginTop: 3,
+      fontWeight: '500',
+    },
+    songRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderBottomWidth: 1,
+      borderBottomColor: '#302D46',
+    },
+    albumDetailContainer: {
+      flex: 1,
+      width: '100%',
+    },
+    albumBackButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      alignSelf: 'flex-start',
+      paddingVertical: 10,
+      paddingRight: 14,
+      marginBottom: 8,
+      gap: 5,
+    },
+    albumBackText: {
+      color: '#C4B5FD',
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    albumDetailHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      paddingHorizontal: 2,
+      paddingBottom: 16,
+      marginBottom: 14,
+      borderBottomWidth: 1,
+      borderBottomColor: '#39304F',
+    },
+    albumDetailArtwork: {
+      width: 78,
+      height: 78,
+      borderRadius: 14,
+      borderWidth: 1, 
+      borderColor: '#756096',
+      backgroundColor: '#302448'
+    },
+    albumDetailArtworkFallback: {
+      width: 78,
+      height: 78,
+      borderRadius: 14,
+      overflow: 'hidden',
+      borderWidth: 1, 
+      borderColor: '#756096',
+    },
+    albumDetailArtworkGradient: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    albumDetailInfo: {
+      flex: 1,
+      minWidth: 0,
+      justifyContent: 'center',
+    },
+    albumDetailName: {
+      color: '#FFFFFF',
+      fontSize: 16, 
+      fontWeight: '700',
+      textAlign: 'left',
+      lineHeight: 20,
+    },
+    albumDetailArtist: {
+      color: '#C4B5FD',
+      fontSize: 12,
+      fontWeight: '600',
+      marginTop: 4,
+    },
+    albumDetailCount: {
+      color: '#85859D',
+      fontSize: 11,
+      marginTop: 3,
+    },
+    albumDetailActions: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+    },
+    albumActionsRow: {
+      width: '100%',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      marginBottom: 16,
+    },
+    albumPlayButtonContainer: {
+      width: 42,
+      height: 42,
+      position: 'relative'
+    },
+    albumPlayButtonGlow: {
+      position: 'absolute',
+      width: '100%',
+      height: '100%',
+      borderRadius: 12,
+      borderWidth: 1, 
+      borderColor: '#A78BFA',
+      shadowColor: '#A78BFA',
+      shadowOpacity: 0.6,
+      shadowRadius: 8,
+      elevation: 5,
+    },
+    albumPlayButton: {
+      width: 42,
+      height: 42,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: '#7C3AED',
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: '#A78BFA',
+    },
+    albumPlayButtonDisabled: {
+      opacity: 0.45,
+    },
+    albumPlayButtonText: {
+      color: '#FFFFFF',
+      fontSize: 14,
+      fontWeight: '700',
+    },
+    albumDeleteButton: {
+      width: 42,
+      height:42,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: '#302448',
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: '#704052',
+    },
+    albumSongsHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 6,
+      paddingHorizontal: 3, 
+    },
+    albumSongsTitle: {
+      color: '#FFFFFF',
+      fontSize: 17,
+      fontWeight: '700',
+    },
+    albumSongsCount: {
+      color: '#C4B5FD',
+      fontSize: 12,
+      fontWeight: '600',
+      backgroundColor: '#302448',
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 10,
+      overflow: 'hidden',
+    },
+    albumSongsList: {
+      flex: 1,
+      minHeight: 0,
+    },
+    albumSongItem: {
+      paddingVertical: 12,
+      paddingHorizontal: 10,
+      gap: 13, 
+      marginBottom: 10,
+      backgroundColor: '#211D32',
+      borderWidth: 1, 
+      borderColor: '#39304F',
+    },
+    albumSongArtwork: {
+      width: 62,
+      height: 62,
+      borderRadius: 11,
+      backgroundColor: '#302448',
+    },
+    albumSongArtworkFallback: {
+      width: 62,
+      height: 62,
+      borderRadius: 11, 
+      backgroundColor: '#302448',
+      borderWidth: 1, 
+      borderColor: '#51436F',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    albumSongName: {
+      color: '#FFFFFF',
+      fontSize: 15,
+      fontWeight: '600',
+    },
+    albumSongArtist: {
+      color: '#B9A9D5',
+      fontSize: 12, 
+      marginTop: 5,
+    },
+    albumDeleteButtonText: {
+      color: '#FF9AAB',
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    albumGridRow: {
+      justifyContent: 'space-between',
+      marginBottom: 14,
+    },
+    albumCard: {
+      width: '48.5%',
+      backgroundColor: '#252039',
+      borderRadius: 18,
+      borderWidth: 1,
+      borderColor: '#51436F',
+      padding: 8,
+      marginBottom: 2,
+      overflow: 'hidden',
+      shadowColor: '#000000',
+      shadowOffset: {
+        width: 0,
+        height: 4,
+      },
+      shadowOpacity: 0.22,
+      shadowRadius: 8,
+      elevation: 4,
+    },
+    albumCardArtwork: {
+      width: '100%',
+      aspectRatio: 1,
+      borderRadius: 13,
+      backgroundColor: '#302448',
+      borderWidth: 1,
+      borderColor: '#51436F',
+    },
+    albumCardArtworkFallback: {
+      width: '100%',
+      aspectRatio: 1,
+      borderRadius: 13,
+      backgroundColor: '#302448',
+      borderWidth: 1,
+      borderColor: '#51436F',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    albumCardInfo: {
+      paddingTop: 11,
+      paddingHorizontal: 3,
+      paddingBottom: 5,
+      minHeight: 104,
+    },
+    albumcardName: {
+      color: '#FFFFFF',
+      fontSize: 14,
+      fontWeight: '700',
+      lineHeight: 18,
+      minHeight: 36,
+    },
+    albumCardArtist: {
+      color: '#C4B5FD',
+      fontSize: 12,
+      lineHeight: 16,
+      marginTop: 4,
+    },
+    albumCardCount: {
+      color: '#D8C9F5',
+      fontSize: 10,
+      fontWeight: '600',
+      marginTop: 8,
+      backgroundColor: '#3A3150',
+      paddingHorizontal: 9,
+      paddingVertical: 5,
+      borderRadius: 8,
+      alignSelf: 'flex-start',
+      overflow: 'hidden',
+    },
+    albumRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 10,
+      paddingHorizontal: 4,
+      borderBottomWidth: 1,
+      borderBottomColor: '#302D46',
+    },
+    albumArtwork: {
+      width: 64,
+      height: 64,
+      borderRadius: 10,
+      backgroundColor: '#29243B',
+    },
+    albumArtworkFallback: {
+      width: 64,
+      height: 64,
+      borderRadius: 10,
+      backgroundColor: '#302448',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    albumArtworkNote: {
+      color: '#A78BFA',
+      fontSize: 28,
+    },
+    albumInfo: {
+      flex: 1,
+      marginLeft: 12,
+      justifyContent: 'center',
+    },
+    albumName: {
+      color: '#FFFFFF',
+      fontSize: 15,
+      fontWeight: 'bold',
+    },
+    albumArtist: {
+      color: '#C4B5FD',
+      fontSize: 13,
+      marginTop: 4,
+    },
+    albumSongCount: {
+      color: '#85859D',
+      fontSize: 11,
+      marginTop: 4,
+    },
+    removeSongButton: {
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    removeSongButtonText: {
+      color: '#A78BFA',
+      fontSize: 18,
+      fontWeight: 'bold',
+    },
+    songArtwork: {
+      width: 54,
+      height: 54,
+      borderRadius: 10,
+      backgroundColor: '#302448',
+    },
+    songArtworkFallback: {
+      width: 54,
+      height: 54,
+      borderRadius: 9,
+      backgroundColor: '#302448',
+      borderWidth: 1,
+      borderColor: '#51436F',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    songVinylDisc: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: '#11101A',
+      borderWidth: 1,
+      borderColor: '#756096',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    songVinylGroove: {
+      position: 'absolute',
+      width: '75%',
+      height: '75%',
+      borderRadius: 999,
+      borderWidth: 1, 
+      borderColor: 'rgba(220, 200, 255, 0.25)',
+    },
+    songVinylLabel: {
+      width: 12, 
+      height: 12,
+      borderRadius: 6, 
+      backgroundColor: '#A78BFA',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    songItemInfo: {
+      flex: 1,
+      minWidth: 0,
+      justifyContent: 'center',
+    },
+    sonItemArtist: {
+      color: '#A99BBF',
+      fontSize: 11,
+      marginTop: 4, 
+    },
+    songItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 11,
+      paddingVertical: 9,
+      paddingHorizontal: 8,
+      borderRadius: 11,
+    },
+    songItemActive: {
+      backgroundColor: '#302747',
+      borderWidth: 1,
+      borderColor: '#51436F',
+    },
+    songItemText: {
+      color: '#D8D5E5',
+      fontSize: 14,
+      fontWeight: '500'
+    },
+    songItemTextActive: {
+      color: '#C4B5FD',
+      fontWeight: '700',
+    },
+    emptyText: {
+      color: '#B9B9CC',
+      fontSize: 14,
+      paddingVertical: 8,
+    },
+    artworkContainer: {
+      width: '100%',
+      maxWidth: 350,
+      aspectRatio: 1,
+      borderRadius: 24,
+      borderWidth: 1,
+      borderColor: '#494064',
+      overflow: 'hidden',
+    },
+    artwork: {
+      width: '100%',
+      height: '100%',
+      borderRadius: 24,
+    },
+    artworkFallback: {
+      width: '100%',
+      height: '100%',
+      borderRadius: 24,
+      overflow: 'hidden',
+    },
+    artworkFallbackGradient: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      overflow: 'hidden',
+    },
+    vinylDisc: {
+      width: '72%',
+      aspectRatio: 1,
+      borderRadius: 999,
+      backgroundColor: '#11101A',
+      borderWidth: 2,
+      borderColor: '#51466B',
+      alignItems: 'center',
+      justifyContent: 'center',
+      overflow: 'hidden',
+      elevation: 12,
+      shadowColor: '#000000',
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.4,
+      shadowRadius: 12,
+    },
+    vinylGrooveOuter: {
+      position: 'absolute',
+      width: '88%',
+      height: '88%',
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: 'rgba(220, 200, 255, 0.22)',
+    },
+    vinylGrooveMiddle: {
+      position: 'absolute',
+      width: '72%',
+      height: '72%',
+      borderRadius: 999,
+      borderWidth: 1, 
+      borderColor: 'rgba(220, 200, 255, 0.18)',
+    },
+    vinylGrooveInner: {
+      position: 'absolute',
+      width: '56%',
+      height: '56%',
+      borderRadius: 999,
+      borderWidth: 1, 
+      borderColor: 'rgba(220, 200, 255, 0.14)',
+    },
+    vinylLabel: {
+      width: '34%',
+      aspectRatio: 1, 
+      borderRadius: 999,
+      borderWidth: 2, 
+      borderColor: '#C5A9FF',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    note: {
+      color: '#A78BFA',
+      fontSize: 76,
+      textAlign: 'center',
+    },
+    songTitle: {
+      width: '100%',
+      color: '#FFFFFF',
+      fontSize: 19,
+      fontWeight: 'bold',
+      textAlign: 'left',
+    },
+    songArtist: {
+      color: '#C4B5FD',
+      fontSize: 14,
+      fontWeight: '600',
+      textAlign: 'left',
+      marginTop: 5,
+    },
+    songAlbum: {
+      width: '100%',
+      color: '#85859D',
+      fontSize: 12,
+      textAlign: 'left',
+      marginTop: 4,
+    },
+    playerProgress: {
+      width: '100%',
+      marginTop: 0,
+      paddingHorizontal: 4,
+      transform: [{ translateY: -15 }],
+    },
+    progressTime: {
+      width: '100%',
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 4,
+    },
+    progressTimeText: {
+      color: '#A5A0B8',
+      fontSize: 11,
+      fontWeight: '600',
+      fontVariant: ['tabular-nums'],
+    },
+    progressTrack: {
+      width: '100%',
+      height: 8,
+      backgroundColor: '#393653',
+      borderRadius: 10,
+      position: 'relative',
+      justifyContent: 'center',
+      marginTop: 5,
+      overflow: 'visible',
+    },
+    progressFill: {
+      position: 'absolute',
+      left: 0,
+      top: 0,
+      height: 8,
+      borderRadius: 10,
+    },
+    progressThumb: {
+      position: 'absolute',
+      width: 16,
+      height: 16,
+      borderRadius: 8,
+      top: -4,
+      marginLeft: -8,
+      backgroundColor: '#FFFFFF',
+      borderWidth: 3,
+      borderColor: '#A78BFA',
+      elevation: 4,
+    },
+    progressSlider: {
+      position: 'absolute',
+      left: 0,
+      top: -16,
+      width: '100%',
+      height: 40,
+      opacity: 1,
+      zIndex: 2,
+    },
+    button: {
+      backgroundColor: '#7C3AED',
+      paddingVertical: 10,
+      paddingHorizontal: 20,
+      borderRadius: 24,
+      marginTop: 10,
+    },
+    clearLibraryButton: {
+      backgroundColor: '#29243B',
+      paddingVertical: 9,
+      paddingHorizontal: 16,
+      borderRadius: 18,
+      borderWidth: 1,
+      borderColor: '#51436F',
+      marginTop: 0,
+      marginBottom: 10,
+    },
+    buttonText: {
+      color: '#FFFFFF',
+      fontSize: 16,
+      fontWeight: 'bold',
+      textAlign: 'center',
+    },
+    playbackControls: {
+      width: '100%',
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 0,
+      gap: 12,
+      marginTop: 14,
+      marginBottom: 4,
+    },
+    repeatButton: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: '#29243B',
+      borderWidth: 1,
+      borderColor: '#51436F',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    repeatButtonText: {
+      fontSize: 25,
+      color: '#C4B5FD',
+      fontWeight: '600',
+    },
+    shuffleButtonText: {
+      fontSize: 25,
+      lineHeight: 29,
+      color: '#C4B5FD',
+      fontWeight: '600',
+      textAlign: 'center',
+      includeFontPadding: false,
+      transform: [{ translateY: 2 }],
+    },
+    repeatButtonActive: {
+      backgroundColor: '#51436F',
+      borderColor: '#A78BFA'
+    },
+    skipButton: {
+      width: 42,
+      height: 42,
+      borderRadius: 21,
+      backgroundColor: '#302448',
+      borderWidth: 1,
+      borderColor: '#51436F',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    skipButtonText: {
+      color: '#E9DFFF',
+      fontSize: 18,
+      fontWeight: '700',
+    },
+    playButton: {
+      width: 68,
+      height: 68,
+      borderRadius: 34,
+      backgroundColor: '#A78BFA',
+      borderWidth: 3,
+      borderColor: '#C4B5FD',
+      alignItems: 'center',
+      justifyContent: 'center',
+      shadowColor: '#A78BFA',
+      shadowOffset: {
+        width: 0,
+        height: 4,
+      },
+      shadowOpacity: 0.38,
+      shadowRadius: 10,
+      elevation: 7,
+    },
+    playButtonText: {
+      color: '#21152F',
+      fontSize: 29,
+      fontWeight: 'bold',
+    },
+    progressFavoriteRow: {
+      width: '100%',
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      alignItems: 'center',
+      marginBottom: 10,
+    },
+    favoritePlayerButton: {
+      width: 46,
+      height: 46,
+      borderRadius: 23,
+      backgroundColor: '#302448',
+      borderWidth: 1,
+      borderColor: '#51436F',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginTop: -8,
+    },
+    favoritePlayerButtonText: {
+      color: '#D8D5E5',
+      fontSize: 25,
+    },
+    favoritePlayerButtonActive: {
+      color: '#FF4D6D',
+    },
+    message: {
+      color: '#85859D',
+      fontSize: 12,
+      marginTop: 10,
+      textAlign: 'center',
+    },
+
+    footer: {
+      color: '#85859D',
+      fontSize: 11,
+      letterSpacing: 2,
+      marginTop: 4,
+      textAlign: 'center',
+    }
+  });
