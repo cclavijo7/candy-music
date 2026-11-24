@@ -2333,6 +2333,8 @@ const confirmClearLibrary = () => {
             )}  
 
             <View style={styles.bottomNavigation}>
+
+              {/* REPRODUCTOR */}
               <Pressable
                 style={[
                   styles.bottomNavigationItem,
@@ -2340,12 +2342,26 @@ const confirmClearLibrary = () => {
                 ]}
                 onPress={() => navigateTo('player')}
                 accessibilityRole="button"
-                accessibilityLabel="Ir al reproductor"
+                accessibilityState={{ selected: activeScreen === 'player' }}
+                accessibilityLabel="Reproductor"
               >
-                <Text style={styles.bottomNavigationIcon}>♫</Text>
-                <Text style={styles.bottomNavigationText}>Reproductor</Text>
+                <Ionicons
+                  name={activeScreen === 'player' ? 'play-circle' : 'play-circle-outline'}
+                  size={22}
+                  color={activeScreen === 'player' ? '#A78BFA' : '#9693A8'}
+                />  
+                <Text 
+                  style={[
+                    styles.bottomNavigationText,
+                    activeScreen === 'player' && styles.bottomNavigationTextActive,
+                    activeScreen === 'player' && { color: '#A78BFA' },
+                    ]}
+                >
+                  Reproductor    
+                </Text>
               </Pressable>
 
+              {/* BIBLIOTECA */}      
               <Pressable
                 style={[
                   styles.bottomNavigationItem,
@@ -2353,12 +2369,26 @@ const confirmClearLibrary = () => {
                 ]}
                 onPress={() => navigateTo('library')}
                 accessibilityRole="button"
-                accessibilityLabel="Ir a la biblioteca"
+                accessibilityState={{ selected: activeScreen === 'library' }}
+                accessibilityLabel="Biblioteca"
               >
-                <Text style={styles.bottomNavigationIcon}>▤</Text>
-                <Text style={styles.bottomNavigationText}>Biblioteca</Text>
+                <Ionicons
+                  name={activeScreen === 'library' ? 'library' : 'library-outline'}
+                  size={22}
+                  color={activeScreen === 'library' ? '#60A5FA' : '#9693A8'}
+                />  
+                <Text 
+                  style={[
+                    styles.bottomNavigationText,
+                    activeScreen === 'library' && styles.bottomNavigationTextActive,
+                    activeScreen === 'library' && { color: '#60A5FA'},
+                  ]}
+                >
+                  Biblioteca
+                </Text>
               </Pressable>
 
+              {/* ÁLBUMES  */}    
               <Pressable
                 style={[
                   styles.bottomNavigationItem,
@@ -2366,12 +2396,26 @@ const confirmClearLibrary = () => {
                 ]}
                 onPress={() => navigateTo('albums')}
                 accessibilityRole="button"
-                accessibilityLabel="Ir a álbumes"
+                accessibilityState={{ selected: activeScreen === 'albums' }}
+                accessibilityLabel="Álbumes"
               >
-                <Text style={styles.bottomNavigationIcon}>▣</Text>
-                <Text style={styles.bottomNavigationText}>Álbumes</Text>
+                <Ionicons
+                  name={activeScreen === 'albums' ? 'albums' : 'albums-outline'}
+                  size={22}
+                  color={activeScreen === 'albums' ? '#C084FC' : '#9693A8'}
+                />  
+                <Text 
+                  style={[
+                    styles.bottomNavigationText,
+                    activeScreen === 'albums' && styles.bottomNavigationTextActive,
+                    activeScreen === 'albums' && { color: '#C084FC'},
+                  ]}
+                >
+                  Álbumes
+                </Text>
               </Pressable>
 
+              {/* FAVORITOS */}    
               <Pressable
                 style={[
                   styles.bottomNavigationItem,
@@ -2379,10 +2423,23 @@ const confirmClearLibrary = () => {
                 ]}
                 onPress={() => navigateTo('favorites')}
                 accessibilityRole="button"
-                accessibilityLabel="Ir a favoritos"
-              >
-                <Text style={styles.bottomNavigationIcon}>♥</Text>
-                <Text style={styles.bottomNavigationText}>Favoritos</Text>
+                accessibilityState={{ selected: activeScreen === 'favorites' }}
+                accessibilityLabel="Favoritos"
+              >  
+                <Ionicons
+                  name={activeScreen === 'favorites' ? 'heart' : 'heart-outline'}
+                  size={22}
+                  color={activeScreen === 'favorites' ? '#FB7185' : '#9693A8'}
+                />  
+                <Text 
+                  style={[
+                    styles.bottomNavigationText,
+                    activeScreen === 'favorites' && styles.bottomNavigationTextActive,
+                    activeScreen === 'favorites' && { color: '#FB7185' },
+                  ]}
+                >
+                  Favoritos
+                </Text>
               </Pressable>
             </View>
 
@@ -2617,34 +2674,52 @@ const confirmClearLibrary = () => {
       width: '100%',
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'space-around',
-      backgroundColor: '#1C1C2E',
-      borderRadius: 18,
+      justifyContent: 'space-between',
+      backgroundColor: '#191724',
+      borderRadius: 26,
       borderWidth: 1,
-      borderColor: '#393653',
-      paddingVertical: 8,
-      marginTop: 4,
+      borderColor: '#393448',
+      paddingHorizontal: 5,
+      paddingVertical: 5,
+      marginTop: 10,
       marginBottom: 4,
+      gap: 3,
+      shadowColor: '#000000',
+      shadowOffset: { width: 0, height: 5 },
+      shadowOpacity: 0.22,
+      shadowRadius: 10, 
+      elevation: 6,
     },
     bottomNavigationItem: {
       flex: 1,
+      minWidth: 0,
+      minHeight: 60,
       alignItems: 'center',
       justifyContent: 'center',
       paddingVertical: 6,
+      borderRadius: 22,
       gap: 4,
-      borderRadius: 12,
     },
     bottomNavigationItemActive: {
-      backgroundColor: '#302448',
+      flex: 1.25, 
+      backgroundColor: '#302641',
+      borderWidth: 1,
+      borderColor: '#4B3C62',
     },
     bottomNavigationIcon: {
-      color: '#A78BFA',
-      fontSize: 20,
+      color: '#9693A8',
+      fontSize: 10,
+      fontWeight: '500',
     },
     bottomNavigationText: {
-      color: '#B9B9CC',
+      color: '#9693A8',
       fontSize: 10,
-      fontWeight: '600',
+      fontWeight: '500',
+    },
+    bottomNavigationTextActive: {
+      color: '#FFFFFF',
+      fontSize: 10,
+      fontWeight: '700',
     },
     favoriteTabs: {
       flexDirection: 'row',
